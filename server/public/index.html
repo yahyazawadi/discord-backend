@@ -2806,7 +2806,7 @@
 
       if (chatMessages.length === 0) {
         feed.innerHTML = `
-          <div style="color: var(--text-muted); text-align: center; margin-top: 150px;">
+          <div id="chat-empty-state" style="color: var(--text-muted); text-align: center; margin-top: 150px;">
             <div style="font-size: 40px; margin-bottom: 12px;">💬</div>
             <h3>This is the start of the chat feed!</h3>
             <p style="font-size: 13px; color: var(--text-muted);">Send a message to get started.</p>
@@ -3167,7 +3167,10 @@
       chatMessages.push(msg);
       
       const feed = document.getElementById('socket-messages-feed');
-      if (feed.querySelector('h3') || feed.innerText.includes('Welcome') || feed.innerText.includes('start of the chat')) {
+      const emptyState = document.getElementById('chat-empty-state');
+      if (emptyState) {
+        emptyState.remove();
+      } else if (feed.querySelector('h3') && feed.innerText.includes('start of the chat feed')) {
         feed.innerHTML = '';
       }
 
