@@ -33,6 +33,7 @@ classDiagram
         +ObjectId _id
         +String name
         +String icon
+        +Boolean isPrivate
         +ObjectId owner
         +ObjectId[] admins
         +ObjectId[] members
@@ -86,6 +87,7 @@ Groups channel categories, lists members, manages admins, and handles invite lin
 * `owner`: References `User` (the creator/ultimate manager of the server).
 * `admins`: Array of ObjectIds referencing `User` (Moderators/administrators with permissions to delete messages, kick, or ban members).
 * `members`: Array of ObjectIds of all users in the server.
+* `isPrivate`: Boolean flag. If `true`, the server cannot be joined via `/join-direct` — only via a valid invite code. Unauthenticated requests to view the server return a `"Server is private"` message. Defaults to `false`.
 * `bannedUsers`: Array of ObjectIds of users blocked from entering (security constraint).
 * `inviteCode`: Dynamic 8-digit unique string used to join.
 * `inviteUses`: Number of times the current invite code has been used (default: `0`).
@@ -125,8 +127,8 @@ Houses chat logs for both servers and direct messages, including rich file metad
 * `anonymousSenderName`: Randomly generated display name (e.g., `"Spunky Tiger"`) shown to users when `isAnonymous` is true.
 * `reactions`: Sub-document array of emoji interactions:
   * `emoji`: Unicode reaction key (e.g., `💖`).
-  * `users`: Array of User IDs (for public reactions).
-  * `anonymousReactors`: Array of `{ userId, anonymousName }` objects (preserves user IDs under the hood to allow toggle actions while showing anonymous labels like `"Silly Dolphin"` to everyone else).
+  * `users`: Array of User IDs (for public reactions). A user may only appear once per emoji entry (enforced server-side).
+  * `anonymousReactors`: Array of `{ anonymousName }` strings only — **no `userId` stored**. The anonymous display name is **generated client-side** (using the same adjective+animal helper) and is **editable by the user** before confirming the reaction. The chosen name is persisted in `localStorage` so the user can recognise and remove their own reaction later. A single user may react to the same message multiple times as long as each reaction uses a **different emoji**. There is no server-side dedup for anonymous reactors — removal is matched by `anonymousName` (MVP-acceptable tradeoff).
 
 ### 🔔 Notifications — Client-Side Only (No Database Model)
 **Deliberately cut** to save development time and database write overhead. Notifications are handled entirely as client-side Zustand state:
@@ -217,6 +219,7 @@ const inviteCache = new InviteTrie();
 | **`/api/servers`** | `POST` | `{ name, icon, isPrivate }` | `protect` | Create server, assign owner, and auto-populate default channels. |
 | **`/api/servers`** | `GET` | None | `protect` | Fetch all servers the authenticated user is a member of. |
 | **`/api/servers/join/:inviteCode`** | `POST` | `inviteCode` param | `protect` | Instantly join a server using its unique invite code link (Bypasses private server locks). |
+| **`/api/servers/:serverId`** | `GET` | `serverId` param | `optional-auth` | Fetch server details (name, icon, member counts, public channels). If `isPrivate: true` **and** the requester is not an authenticated member, returns `{ error: "Server is private" }` with a `403`. Authenticated members always receive full data. |
 | **`/api/servers/:serverId/join-direct`**| `POST` | `serverId` param | `protect` | Direct attempt to join by ID. If `isPrivate: true`, returns error: `"Server is private and you cannot join!"`. |
 | **`/api/servers/:serverId/leave`** | `POST` | `serverId` param | `protect` | Remove authenticated user from server member list. |
 | **`/api/servers/:serverId/kick/:userId`** | `POST` | `serverId`, `userId` params | `protect` | Kick a user from the server (Only Server Admins / Owner). |
@@ -445,7 +448,7 @@ const compressImageToWebP = (file) => {
 ### 📦 Render / Railway Environment Variables:
 ```env
 PORT=10000
-MONGODB_URI=mongodb+srv://discorduser:!0Zerox@discord.dtar4o9.mongodb.net/discord-clone
+MONGODB_URI=mongodb+srv://<DB_USER>:<DB_PASSWORD>@<CLUSTER>.mongodb.net/discord-clone
 JWT_SECRET=super_secret_key_change_in_production
 CLIENT_URL=https://your-discord-app.vercel.app
 NODE_ENV=production
@@ -482,7 +485,7 @@ Because we use WebRTC (via PeerJS), we avoid needing a complex central media ser
 ### 🌐 The Peer-to-Peer Concept
 1. **The Handshake (Signaling):** A user joins a Voice Channel and gets a unique `peerId`. They broadcast this ID to the room via our Node.js/Socket.io backend. This takes almost zero bandwidth.
 2. **The Direct Connection (Media):** Every other user receives the ID and initiates a `peer.call(peerId, stream)`. A direct, encrypted tunnel opens between the users' laptops. The heavy video/audio traffic flows directly across the internet, completely bypassing our backend (saving server CPU and bandwidth).
-*(This allows up to 4-10 people in a call easily with 0 backend hosting costs, making it actually faster than Google Meet's central server for small groups!)*
+> **⚠️ Mesh Scaling Limit (Documented):** In a P2P mesh, every peer must upload their stream to every other peer. With `N` participants, each client maintains `N-1` outgoing streams. At **N=5**, that is 4 simultaneous uploads per device; at **N=10**, it is 9. This is sustainable on modern home broadband (~5–10 Mbps upload) but becomes strained beyond ~10 participants. This is an **intentional, documented MVP constraint** — the correct production fix is replacing the mesh with a Selective Forwarding Unit (SFU) like mediasoup or LiveKit, which centralises stream routing. For our 5-day, ≤20-user target this is perfectly fine.
 
 ### 📡 STUN Servers (Public IP Discovery)
 To connect Peer-to-Peer, computers need to know their public IP address (which is hidden behind home WiFi routers/NATs). 
@@ -548,6 +551,7 @@ To strictly finish the full-stack project in 5 days while remaining within the a
 3. **Storage**: **Cloudflare R2**. We will bypass the Node.js server and generate pre-signed URLs to upload avatars/attachments directly from the React client to Cloudflare R2.
 4. **Search**: **MongoDB `$text` Indices**. We will implement a lightning-fast search using native MongoDB indexing (`$text`), avoiding complex regex matching.
 5. **Auth / Email Validation**: **Nodemailer + Mailtrap/SendGrid**. We will generate secure OTPs/tokens, store them in MongoDB, and send real verification emails to ensure the auth flow is robust.
+   > **⚠️ TTL Index Required**: OTP documents stored in MongoDB **must** include an `expiresAt` field with a MongoDB TTL index (`expireAfterSeconds: 0`). Without this, stale OTP documents accumulate indefinitely and bloat the collection. Set OTP lifetime to **10 minutes**.
 
 ### Excluded "Fancy" Features (To Guarantee 5-Day Delivery)
 To stay on schedule, we **MUST NOT** implement the following overly-complex features:
