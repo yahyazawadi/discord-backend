@@ -6,7 +6,13 @@ This master documentation is a comprehensive blueprint of your simplified Discor
 
 ## 🏗️ 1. Project Goal & Design Core
 The target is a high-performance, lightweight, deployment-ready Express + Socket.io + PeerJS server. 
-* **Single-Port Architecture**: We bind Express, Socket.io, and PeerJS (`/peerjs`) to the same listener on port `5000`. This allows the server to deploy flawlessly on services like Render and Railway without opening extra ports.
+* **Single-Port Architecture**: We bind Express, Socket.io, and PeerJS (`/peerjs`) to the same HTTP listener. The port is always read from `process.env.PORT` (set by the hosting provider at runtime) with a local fallback of `5000`:
+  ```js
+  // ✅ MANDATORY — never hardcode 5000 directly
+  const PORT = process.env.PORT || 5000;
+  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  ```
+  Render and Railway assign their own dynamic `PORT` values (e.g. `10000`). Hardcoding `5000` will cause the process to bind to the wrong port and silently fail in production.
 * **Premium UX Features**: Out-of-the-box support for text categories, real-time typing indicators, pinned/edited messages, and unique anonymous messaging/reactions, as well as simple WebRTC voice and video rooms.
 
 ---
@@ -70,7 +76,8 @@ classDiagram
 
 ### 👤 User Model (`models/User.js`)
 Handles authentication, password hashing, active presence status, age checks, and block list states:
-* `username`: Cleaned unique string.
+* `username`: Cleaned unique lowercase handle (e.g., `alex_dev`).
+* `displayName`: Non-unique friendly display name (e.g., `Alex Dev`). Defaults to `username` upon creation.
 * `email`: Lowercased unique email string.
 * `password`: Securely encrypted via `bcryptjs` (auto-hashes on insertion/changes).
 * `avatar`: Custom initials avatar generated on signup (`https://api.dicebear.com/7.x/initials/svg?seed=username`).
@@ -79,6 +86,9 @@ Handles authentication, password hashing, active presence status, age checks, an
 * `birthdate`: Date object representing user's birthdate (enables client-side and backend age validation).
 * `createdAt`: Date timestamp indicating account creation (defaults to `Date.now`).
 * `blockedUsers`: Array of ObjectIds referencing other `User` profiles (utilized by the DM block validation engine).
+* `anonymousNames`: Array of sub-documents mapping active context (servers/channels/DMs) to active anonymous display names:
+  * `contextId`: ObjectId representing the context (e.g. Server ID, Channel ID, or Conversation ID).
+  * `anonymousName`: The user's registered, non-conflicting anonymous name for this specific room/context (user-editable).
 
 ### 🛡️ Server Model (`models/Server.js`)
 Groups channel categories, lists members, manages admins, and handles invite link keys:
@@ -124,11 +134,11 @@ Houses chat logs for both servers and direct messages, including rich file metad
   * `fileName`: Original file name string.
   * `fileSize`: Number representing file size in bytes (allows rich user sizing feedback).
 * `isAnonymous`: Boolean representing whether it was sent anonymously.
-* `anonymousSenderName`: Randomly generated display name (e.g., `"Spunky Tiger"`) shown to users when `isAnonymous` is true.
+* `anonymousSenderName`: The user-defined or randomly generated anonymous name. If there is a context-wide name conflict, a dynamic numeric suffix (e.g. `MyAlias#1389`) is appended to prevent identity overlaps.
 * `reactions`: Sub-document array of emoji interactions:
   * `emoji`: Unicode reaction key (e.g., `💖`).
   * `users`: Array of User IDs (for public reactions). A user may only appear once per emoji entry (enforced server-side).
-  * `anonymousReactors`: Array of `{ anonymousName }` strings only — **no `userId` stored**. The anonymous display name is **generated client-side** (using the same adjective+animal helper) and is **editable by the user** before confirming the reaction. The chosen name is persisted in `localStorage` so the user can recognise and remove their own reaction later. A single user may react to the same message multiple times as long as each reaction uses a **different emoji**. There is no server-side dedup for anonymous reactors — removal is matched by `anonymousName` (MVP-acceptable tradeoff).
+  * `anonymousReactors`: Array of `{ anonymousName, realUserId }` sub-documents. Standard members only receive the `anonymousName` string list (retaining perfect privacy). Server Owners and Admins receive both fields, displaying the reactor's real `username` and `displayName` for moderation auditing.
 
 ### 🔔 Notifications — Client-Side Only (No Database Model)
 **Deliberately cut** to save development time and database write overhead. Notifications are handled entirely as client-side Zustand state:
@@ -203,11 +213,30 @@ class InviteTrie {
 
 // Global instance instantiated at server boot
 const inviteCache = new InviteTrie();
+
+// Seed the cache from the database at startup
+const seedInviteCache = async () => {
+  try {
+    const servers = await Server.find({ inviteCode: { $ne: null } }, 'inviteCode _id');
+    for (const server of servers) {
+      inviteCache.insert(server.inviteCode, server._id.toString());
+    }
+    console.log(`Successfully seeded ${servers.length} invites into Trie Cache.`);
+  } catch (err) {
+    console.error("Failed to seed invite cache:", err);
+  }
+};
 ```
 * **Why this is an interview winner**: Most junior engineers will just do `Server.findOne({ inviteCode: req.params.code })`. By adding a simple Trie wrapper, you demonstrate a deep understanding of algorithmic bounds, memory manipulation, and how to protect database connections from spam requests!
 ---
 
 ## 📡 3. HTTP REST API Endpoint Map
+
+> **📌 Middleware Key**
+> | Token | Behaviour |
+> |---|---|
+> | `protect` | Requires a valid JWT. Rejects unauthenticated requests with `401`. |
+> | `optional-auth` | Decodes the JWT **if present** in the `Authorization` header and attaches `req.user`. If no token is sent, continues without error (`req.user = null`). Used on routes that serve different payloads to logged-in vs. anonymous visitors (e.g., `GET /api/servers/:serverId` hides data for private servers unless authenticated). |
 
 | Route | HTTP Method | Request Body / Params | Middleware | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
@@ -224,7 +253,7 @@ const inviteCache = new InviteTrie();
 | **`/api/servers/:serverId/leave`** | `POST` | `serverId` param | `protect` | Remove authenticated user from server member list. |
 | **`/api/servers/:serverId/kick/:userId`** | `POST` | `serverId`, `userId` params | `protect` | Kick a user from the server (Only Server Admins / Owner). |
 | **`/api/servers/:serverId/ban/:userId`** | `POST` | `serverId`, `userId` params | `protect` | Ban user and add to bannedUsers list (Only Server Admins / Owner). |
-| **`/api/servers/:serverId/search`** | `GET` | `query` query parameter | `protect` | Full-text query messages search within the server's channels. |
+| **`/api/messages/search`** | `GET` | `{ query, channelId?, conversationId? }` query params | `protect` | Scoped full-text search. Enforces `400` if both/neither scope params are sent. Restricts access (`403`) unless the user is a member of the server/channel or a participant in the DM conversation. |
 | **`/api/servers/:serverId/channels`** | `POST` | `{ name, type, description }` | `protect` | Create text or voice sub-channel inside category (Only Server Owner). |
 | **`/api/servers/:serverId/channels/:channelId/subscribe`** | `POST` | None | `protect` | Toggle subscribing/unsubscribing to a specific channel's real-time alerts. |
 | **`/api/servers/:serverId/channels/:channelId/mute`** | `POST` | None | `protect` | Toggle muting/unmuting notifications for a specific channel. |
@@ -269,14 +298,14 @@ sequenceDiagram
 
 ---
 
-## 🎭 5. Anonymous Name Generation Helper
+## 🎭 5. Anonymous Name Generation Helper & Collision Prevention
 
-To create random animal-adjective identities when users toggle anonymity, we use a simple utility helper:
+To create random animal-adjective identities when users toggle anonymity, we use a utility helper:
 
 ```javascript
 export const generateAnonymousName = () => {
   const adjectives = ['Happy', 'Sleepy', 'Silly', 'Spunky', 'Golden', 'Mysterious', 'Sneaky', 'Swift', 'Jolly', 'Gentle'];
-  const animals = ['Panda', 'Dolphin', 'Koala', 'Cheetah', 'Koala', 'Fox', 'Tiger', 'Falcon', 'Otter', 'Badger'];
+  const animals = ['Panda', 'Dolphin', 'Koala', 'Cheetah', 'Wolf', 'Fox', 'Tiger', 'Falcon', 'Otter', 'Badger'];
   
   const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
   const randomAnim = animals[Math.floor(Math.random() * animals.length)];
@@ -284,6 +313,12 @@ export const generateAnonymousName = () => {
   return `${randomAdj} ${randomAnim}`;
 };
 ```
+
+### 🛡️ Non-Conflict & Uniqueness Rules in Database
+To prevent duplicate active anonymous identities within the same chat context (channel or DM conversation), the server enforces the following validation checks:
+* **Allow Any Custom Name**: Users can select ANY custom anonymous name they wish (it does not have to be generated).
+* **Automatic Conflict Resolution**: If a user selects a custom anonymous name that conflicts with an existing active anonymous name in that context, the system automatically appends a dynamic 4-digit numeric suffix (e.g., `"MyAlias#1389"`) to guarantee non-conflict.
+* **Admin Privilege & Disclosure**: To audit logs and stop trolling, Server Owners and Admins are excluded from anonymous stripping. When they view messages or reactions, the backend populates the real sender's `username` and `displayName` alongside their `anonymousSenderName`. Standard users only see the anonymous identity.
 
 ---
 
@@ -447,12 +482,40 @@ const compressImageToWebP = (file) => {
 
 ### 📦 Render / Railway Environment Variables:
 ```env
-PORT=10000
+# PORT is injected automatically by Render/Railway — do NOT set it manually here.
+# process.env.PORT is read at runtime; the fallback in code is 5000 for local dev.
 MONGODB_URI=mongodb+srv://<DB_USER>:<DB_PASSWORD>@<CLUSTER>.mongodb.net/discord-clone
 JWT_SECRET=super_secret_key_change_in_production
 CLIENT_URL=https://your-discord-app.vercel.app
 NODE_ENV=production
+GIPHY_API_KEY=your_giphy_api_key_here
+CLOUDFLARE_R2_ACCOUNT_ID=your_account_id
+CLOUDFLARE_R2_ACCESS_KEY_ID=your_access_key
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=your_secret_key
+CLOUDFLARE_R2_BUCKET_NAME=discord-clone-assets
 ```
+
+> **⚠️ CORS & Frontend credentials Configuration (Mandatory)**: The Express server must set CORS origin to `process.env.CLIENT_URL`. Without this, every browser request from the React client will be blocked by CORS policy.
+> 
+> **Server-Side CORS Setup**:
+> ```js
+> import cors from 'cors';
+> app.use(cors({
+>   origin: process.env.CLIENT_URL,
+>   credentials: true  // Required for cookies / Authorization headers
+> }));
+> ```
+>
+> **Client-Side Axios/Fetch Setup**:
+> To ensure the authorization token (and potentially cookies) are sent with every API request, the React frontend must globally configure its client instance (e.g. Axios) to send credentials:
+> ```js
+> import axios from 'axios';
+> 
+> const api = axios.create({
+>   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000',
+>   withCredentials: true // MANDATORY — matches credentials: true on server
+> });
+> ```
 
 ### 🔊 Connecting Your React Client:
 ```javascript
@@ -550,7 +613,46 @@ To strictly finish the full-stack project in 5 days while remaining within the a
 2. **Styling**: **Pure CSS (with CSS Modules)**. We will use CSS Modules (e.g. `Chat.module.css`) to prevent global style collisions, strictly adhering to the "Pure CSS" requirement without suffering layout nightmares.
 3. **Storage**: **Cloudflare R2**. We will bypass the Node.js server and generate pre-signed URLs to upload avatars/attachments directly from the React client to Cloudflare R2.
 4. **Search**: **MongoDB `$text` Indices**. We will implement a lightning-fast search using native MongoDB indexing (`$text`), avoiding complex regex matching.
+   > **⚠️ Index Declaration Required**: The `$text` index **must** be declared on the `Message` model's `content` field or the search route will throw a runtime error:
+   > ```js
+   > // In models/Message.js — add this to the schema definition
+   > MessageSchema.index({ content: 'text' });
+   > ```
+   > **⚠️ Validation & Scope Enforcements**:
+   > 1. **Exclusive Scopes**: The query must specify exactly **one** scope: either `channelId` or `conversationId`. If both or neither are provided, the route returns `400 Bad Request`.
+   > 2. **Access Control (Authorization)**: Before returning search results, the server **must** verify the requesting user's authorization to access the messages:
+   >    * **For Channel Search**: The server must verify that the user is a registered member of the parent server.
+   >    * **For DM Search**: The server must verify that the user is one of the participants of the target conversation.
+   >    * If the check fails, the server rejects the request with a `403 Forbidden` (`"Access Denied: You are not authorized to view messages in this scope."`).
+   >
+   > **⚠️ Search Execution**:
+   > ```js
+   > // Channel search (after verifying server membership)
+   > const results = await Message.find({
+   >   channel: channelId,          // ← scope to the single channel
+   >   $text: { $search: query }
+   > }, { score: { $meta: 'textScore' } })
+   >   .sort({ score: { $meta: 'textScore' } })
+   >   .limit(50);
+   >
+   > // DM conversation search (after verifying conversation participation)
+   > const results = await Message.find({
+   >   conversation: conversationId, // ← scope to the single DM thread
+   >   $text: { $search: query }
+   > }, { score: { $meta: 'textScore' } })
+   >   .sort({ score: { $meta: 'textScore' } })
+   >   .limit(50);
+   > ```
 5. **Auth / Email Validation**: **Nodemailer + Mailtrap/SendGrid**. We will generate secure OTPs/tokens, store them in MongoDB, and send real verification emails to ensure the auth flow is robust.
+   > **📌 OTP Schema (Required)**: Create a dedicated `Otp` model (not embedded in `User`) so the TTL index can cleanly purge expired documents:
+   > ```js
+   > const OtpSchema = new mongoose.Schema({
+   >   email:     { type: String, required: true },
+   >   otp:       { type: String, required: true }, // bcrypt-hashed before storage
+   >   expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } }
+   > });
+   > ```
+   > Set `expiresAt` to `Date.now() + 10 * 60 * 1000` (10 minutes) on creation. MongoDB's TTL worker auto-deletes expired documents.
    > **⚠️ TTL Index Required**: OTP documents stored in MongoDB **must** include an `expiresAt` field with a MongoDB TTL index (`expireAfterSeconds: 0`). Without this, stale OTP documents accumulate indefinitely and bloat the collection. Set OTP lifetime to **10 minutes**.
 
 ### Excluded "Fancy" Features (To Guarantee 5-Day Delivery)
@@ -560,6 +662,10 @@ To stay on schedule, we **MUST NOT** implement the following overly-complex feat
 3. **Per-Message Read Receipts**: Do not track "Seen by X, Y, Z" for every message. In WebSockets, tracking individual read states for 20 users per message causes massive state bloat. Unread channel badges are sufficient.
 4. **Rich Text Formatting (Markdown Parsers)**: Do not spend hours building a complex parser to render bold, italics, spoilers, and code blocks. Stick to standard text rendering for the MVP.
 5. **Server-Side Video Recording**: Since we are using PeerJS (P2P Mesh), adding a recording feature would require routing streams through a centralized server, destroying our simple architecture. No call recording.
+6. **Advanced Edge-Case Safeguards**: To hit our strict 5-day delivery target, we explicitly defer the following advanced edge-case systems:
+   * **In-Memory Trie Cache Invalidation**: The cache is purely seeded at boot for immediate constant-time join checks. Dynamic deletion of invite keys from the Trie on expiration or deletion is deferred.
+   * **Multi-Device Session/Connection Counting**: A user is treated as having a single connection. The system presence (`systemStatus`) toggles between online/offline directly on socket connection/disconnection without tracking concurrent device counters.
+   * **Horizontal Scaling & Socket JWT Handshake Security**: The server is architected as a single-instance node process. Multi-instance Redis Pub/Sub syncing and custom socket handshake validations are out of scope. Standard endpoint-level JWT validation is sufficient.
 
 ---
 
@@ -576,3 +682,43 @@ During the technical interview, explaining *why* we chose this stack is just as 
    * **Reasoning**: Storing images on the local Node.js disk destroys scalability (if we spin up a second backend server, it won't have the files). MongoDB GridFS is slow and expensive for binary data. Cloudflare R2 provides an S3-compatible API with zero egress fees, and generating "pre-signed URLs" allows clients to upload directly to the bucket, keeping our Node.js server entirely free of file-processing CPU spikes.
 5. **Why Zustand over Redux?**
    * **Reasoning**: Redux is extremely verbose and requires heavy boilerplate (actions, reducers, dispatchers). For an MVP, speed is key. Zustand provides the exact same global state capabilities (crucial for keeping the active channel UI and chat WebSocket synchronized) but requires a fraction of the code, reducing bug surface area and development time.
+
+---
+
+## 📌 13. Architectural Implementation Reminders
+
+These are documented decisions and implementation constraints surfaced during blueprint review. Treat them as binding rules during coding.
+
+### 🎭 1. Secure Anonymous Reaction Ownership & Admin Disclosure
+To balance user privacy with strong server moderation, anonymous messages and reactions are fully trackable by server administrators in the database:
+* **Database Tracking**: The `Message` collection's `sender` field and the reaction's sub-document always record the real sender's/reactor's `userId` in MongoDB.
+* **API Filtering (Role-Based)**: 
+  * **Standard Members**: When loading messages or reactions, the controller strips the real user's details and returns only the anonymous name.
+  * **Owners & Admins**: The controller leaves the real user details intact, displaying their real `username` and `displayName` to support audit logs and combat abuse.
+* **Secure Reaction Removal**: When a user removes an anonymous reaction, the server validates it using their authenticated `userId` on the server-side, preventing someone from removing reactions they do not own.
+
+### ⚛️ 2. Presence Resolution — Single Zustand Selector (Mandatory)
+The double-tiered presence logic (`systemStatus` + `userStatusPreference`) **must be resolved in exactly one place** on the client: a dedicated Zustand selector. Do **not** scatter this logic across components.
+
+```javascript
+// ✅ CORRECT — single derived selector in the Zustand store
+const useDisplayStatus = (userId) =>
+  useStore((state) => {
+    const user = state.users[userId];
+    if (!user) return "offline";
+    // If manual preference is set, honour it; otherwise inherit socket-driven state
+    return user.userStatusPreference === "auto"
+      ? user.systemStatus         // Socket.io driven (online / offline)
+      : user.userStatusPreference; // Manual override (idle / dnd / online / offline)
+  });
+
+// ✅ Usage in any component — consume only, never re-derive
+const status = useDisplayStatus(user._id);
+```
+> Every avatar status ring, sidebar presence dot, and member list indicator must call **only** `useDisplayStatus`. Never read `systemStatus` or `userStatusPreference` directly inside a component.
+
+### 🔕 3. DND Silences Everything — Including @mentions (By Design)
+When a user sets their status to **`dnd` (Do Not Disturb)**, the client suppresses **all** audio and visual push alerts — including direct `@username` mentions, `@all` broadcasts, and private DMs.
+* **Passive indicator only**: Silent red unread badge circles still appear in the sidebar.
+* **This matches Discord's production DND behaviour** and is intentional, not a bug.
+* Enforcement point: the `playSystemNotificationSound()` debouncer (§6.10) must check `userStatusPreference === 'dnd'` before playing any audio or triggering any desktop notification API call.

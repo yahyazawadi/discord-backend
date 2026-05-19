@@ -9,13 +9,13 @@ import rateLimit from 'express-rate-limit';
 import xss from 'xss-clean';
 
 import connectDB from './config/db.js';
+import mongoose from 'mongoose';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 dotenv.config();
 
 // Connect to MongoDB
-// Uncomment below when MONGODB_URI is provided in .env
-// connectDB();
+connectDB();
 
 const app = express();
 const server = http.createServer(app);
@@ -93,10 +93,13 @@ const gracefulShutdown = () => {
   console.log('Shutting down gracefully...');
   server.close(() => {
     console.log('HTTP/Socket/Peer server closed.');
-    // mongoose.connection.close(false, () => {
-    //   console.log('MongoDB connection closed.');
+    mongoose.connection.close().then(() => {
+      console.log('MongoDB connection closed.');
       process.exit(0);
-    // });
+    }).catch((err) => {
+      console.error('Error closing MongoDB connection:', err);
+      process.exit(1);
+    });
   });
 };
 
