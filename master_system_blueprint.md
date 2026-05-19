@@ -233,9 +233,7 @@ const inviteCache = new InviteTrie();
 | **`/api/messages/pin/:messageId`** | `PUT` | `messageId` param | `protect` | Toggle pinned state of a message (`isPinned` boolean). |
 | **`/api/messages/edit/:messageId`** | `PUT` | `{ content }` | `protect` | Edit message content, marks `isEdited = true` (Owner only). |
 | **`/api/messages/:messageId`** | `DELETE`| `messageId` param | `protect` | Delete message (Permitted only to Message Sender or Server Admins). |
-| **`/api/notifications`** | `GET` | None | `protect` | Fetch all unread notifications of the logged-in user. |
-| **`/api/notifications/read`** | `PUT` | None | `protect` | Mark all notifications as read. |
-| **`/api/notifications/:notificationId`** | `DELETE`| `notificationId` param | `protect` | Delete/Clear a specific notification. |
+| **`/api/messages/upload-url`** | `POST` | `{ fileName, fileType }` | `protect` | Generate a Cloudflare R2 pre-signed URL for direct client-side file uploads. |
 
 ---
 
@@ -332,11 +330,10 @@ Every channel has a granular notification state progression:
   * **totalMembers**: Returns count of all members in the server.
 * **Payload**: Returned inline inside the main server object to minimize client-side overhead.
 
-### ⏱️ 8. Channel Read receipts (`lastRead`)
-* **Tracking unread counts**: The `User` model holds a nested list of read receipts:
-  * `lastRead`: Array of `{ channelId: ObjectId, lastReadAt: Date }`.
-* **Update action**: Opening a channel triggers a `POST /api/channels/:channelId/read` HTTP request or socket emit that updates the user's `lastReadAt` timestamp.
-* **Unread calculate**: The client/backend counts messages created in that channel since the user's last `lastReadAt` value, accurately rendering the **small red circle count badge**.
+### ⏱️ 8. Channel Unread Badges (Client-Side Only)
+* **No database model required.** Unread state is tracked entirely in Zustand.
+* When a `receive_message` socket event fires for a channel the user is not currently viewing, Zustand increments that channel's unread count in memory.
+* Opening a channel dispatches a Zustand action that resets its unread count to `0`. Zero DB writes.
 
 ### 🌐 9. Dynamic Browser Tab Title Indicator
 * **Tab Focus State Sync**: When a user is in another tab (or your tab is unfocused), receiving direct mentions or direct messages dynamically alters the HTML Document Title (e.g., `(3) 🔴 Discord`) to alert them of missed messages without forcing desktop notification dialogs.
@@ -407,10 +404,10 @@ To keep the platform exceptionally lightweight, performance-optimized, and free 
   ```
 * **Performance Emoji Keyboard**: Emojis are inserted into the chat area via an optimized, custom dropdown emoji panel. Emoji keys are stored as pure Unicode characters in the `content` field, requiring zero processing overhead.
 
-### 🔄 2. Client-Side WebP & WebM Transcoding Pipeline (Zero Server CPU)
-To protect server CPU and keep hosting costs at absolute zero, **all media conversions are executed directly on the user's browser client prior to upload**. 
-* **The Server upload path**: The server is a generic, lightning-fast file receiver. It accepts a pre-compressed `.webp` or `.webm` file and saves it immediately to the local uploads directory. No transcoding or binary dependencies are required on the server!
-* **The Client-Side dynamic load system**: We lazy-load the large FFmpeg.wasm libraries only when the user selects or drops a video file for upload, ensuring the initial website bundle remains incredibly small (~0KB added payload until needed).
+### 🔄 2. Cloudflare R2 Direct Upload Pipeline (Zero Server CPU)
+All file uploads bypass the Node.js server entirely using Cloudflare R2 pre-signed URLs:
+* **Images**: Compressed to `.webp` on the client via the Canvas API (see below) before uploading directly to R2.
+* **Videos & other files**: Uploaded directly to R2 **as-is** with no conversion. No FFmpeg, no server-side transcoding. The client requests a pre-signed URL from our backend (`POST /api/messages/upload-url`), then `PUT`s the file straight to Cloudflare — the backend never touches the binary data.
 
 #### 📁 A. Client-Side Image-to-WebP Compressor (Canvas API)
 Executed instantaneously inside the browser using standard canvas drawing APIs, this downscales heavy images and encodes them to highly-efficient `.webp` with near-zero latency:
