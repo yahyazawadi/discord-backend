@@ -128,15 +128,11 @@ Houses chat logs for both servers and direct messages, including rich file metad
   * `users`: Array of User IDs (for public reactions).
   * `anonymousReactors`: Array of `{ userId, anonymousName }` objects (preserves user IDs under the hood to allow toggle actions while showing anonymous labels like `"Silly Dolphin"` to everyone else).
 
-### 🔔 Notification Model (`models/Notification.js`)
-Tracks persistent alert states for mentions, DMs, and channel subscriptions:
-* `recipient`: ObjectId referencing `User` (The user receiving the alert).
-* `sender`: ObjectId referencing `User` (The actor who triggered the notification).
-* `type`: Enum (`['mention', 'dm', 'channel_alert']`).
-* `server`: ObjectId referencing `Server` (optional context).
-* `channel`: String sub-channel name (optional context).
-* `content`: Text preview snippet.
-* `isRead`: Boolean indicating whether the alert has been cleared (default: `false`).
+### 🔔 Notifications — Client-Side Only (No Database Model)
+**Deliberately cut** to save development time and database write overhead. Notifications are handled entirely as client-side Zustand state:
+* **Unread badges**: A Zustand store tracks which channel IDs have unread messages. The badge clears when the user clicks the channel.
+* **Mentions**: The Socket.io `receive_message` event carries a `mentions` array. The client checks if the logged-in user's ID is in that array and triggers a highlight — no DB write required.
+* **DM pings**: A new DM message fires a `dm_notification` socket event directly to the recipient's socket room. Zustand state is updated instantly.
 
 ---
 
