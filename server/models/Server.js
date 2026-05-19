@@ -75,8 +75,15 @@ const serverSchema = new mongoose.Schema({
     ref: 'User'
   }],
   members: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    nickname: {
+      type: String,
+      trim: true
+    }
   }],
   isPrivate: {
     type: Boolean,
@@ -107,8 +114,7 @@ const serverSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index to support fast invite lookup
-serverSchema.index({ inviteCode: 1 });
+
 
 const Server = mongoose.model('Server', serverSchema);
 

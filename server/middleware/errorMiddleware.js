@@ -1,12 +1,33 @@
 // Global Error Handler Middleware
 export const errorHandler = (err, req, res, next) => {
-  console.error(`[ERROR]: ${err.message}`.red || err);
+  console.error(`[ERROR]: ${err.message}` || err);
 
-  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
-  
+  let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  let errorMsg = err.message || 'Internal Server Error';
+
+  // Handle Mongoose Duplicate Key Error (11000)
+  if (err.code === 11000) {
+    statusCode = 400;
+    const duplicatedField = err.keyValue ? Object.keys(err.keyValue)[0] : '';
+    if (duplicatedField === 'username') {
+      errorMsg = 'Username is already taken';
+    } else if (duplicatedField === 'email') {
+      errorMsg = 'Email is already registered';
+    } else {
+      errorMsg = 'A record with this unique value already exists';
+    }
+  }
+
+  // Handle Mongoose Validation Errors
+  if (err.name === 'ValidationError') {
+    statusCode = 400;
+    errorMsg = Object.values(err.errors).map(val => val.message).join(', ');
+  }
+
   res.status(statusCode).json({
     success: false,
-    message: err.message || 'Internal Server Error',
+    error: errorMsg,
+    message: errorMsg,
     stack: process.env.NODE_ENV === 'production' ? null : err.stack,
   });
 };

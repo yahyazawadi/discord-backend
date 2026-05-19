@@ -22,17 +22,12 @@ const otpSchema = new mongoose.Schema({
 });
 
 // Pre-save hook to hash the OTP before saving to database
-otpSchema.pre('save', async function (next) {
+otpSchema.pre('save', async function () {
   if (!this.isModified('otp')) {
-    return next();
+    return;
   }
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.otp = await bcrypt.hash(this.otp, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
+  const salt = await bcrypt.genSalt(10);
+  this.otp = await bcrypt.hash(this.otp, salt);
 });
 
 // Helper method to verify the OTP

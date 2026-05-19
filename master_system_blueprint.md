@@ -42,7 +42,7 @@ classDiagram
         +Boolean isPrivate
         +ObjectId owner
         +ObjectId[] admins
-        +ObjectId[] members
+        +Member[] members
         +ObjectId[] bannedUsers
         +String inviteCode
         +Number inviteUses
@@ -89,6 +89,7 @@ Handles authentication, password hashing, active presence status, age checks, an
 * `anonymousNames`: Array of sub-documents mapping active context (servers/channels/DMs) to active anonymous display names:
   * `contextId`: ObjectId representing the context (e.g. Server ID, Channel ID, or Conversation ID).
   * `anonymousName`: The user's registered, non-conflicting anonymous name for this specific room/context (user-editable).
+* `isVerified`: Boolean indicating if user's email has been verified via OTP (defaults to false).
 
 ### 🛡️ Server Model (`models/Server.js`)
 Groups channel categories, lists members, manages admins, and handles invite link keys:
@@ -96,7 +97,9 @@ Groups channel categories, lists members, manages admins, and handles invite lin
 * `icon`: Display avatar url.
 * `owner`: References `User` (the creator/ultimate manager of the server).
 * `admins`: Array of ObjectIds referencing `User` (Moderators/administrators with permissions to delete messages, kick, or ban members).
-* `members`: Array of ObjectIds of all users in the server.
+* `members`: Array of sub-documents mapping users to their server-specific nicknames:
+  * `user`: References `User` (the server member).
+  * `nickname`: Custom server-specific nickname string (optional).
 * `isPrivate`: Boolean flag. If `true`, the server cannot be joined via `/join-direct` — only via a valid invite code. Unauthenticated requests to view the server return a `"Server is private"` message. Defaults to `false`.
 * `bannedUsers`: Array of ObjectIds of users blocked from entering (security constraint).
 * `inviteCode`: Dynamic 8-digit unique string used to join.
@@ -235,13 +238,16 @@ const seedInviteCache = async () => {
 > **📌 Middleware Key**
 > | Token | Behaviour |
 > |---|---|
-> | `protect` | Requires a valid JWT. Rejects unauthenticated requests with `401`. |
-> | `optional-auth` | Decodes the JWT **if present** in the `Authorization` header and attaches `req.user`. If no token is sent, continues without error (`req.user = null`). Used on routes that serve different payloads to logged-in vs. anonymous visitors (e.g., `GET /api/servers/:serverId` hides data for private servers unless authenticated). |
+> | `protect` | Requires a valid JWT. Parsed from `Authorization: Bearer <token>` header or `token` cookie. Rejects unauthenticated requests with `401`. |
+> | `optional-auth` | Decodes the JWT **if present** in the `Authorization` header or `token` cookie, and attaches `req.user`. If no token is sent, continues without error (`req.user = null`). Used on routes that serve different payloads to logged-in vs. anonymous visitors (e.g., `GET /api/servers/:serverId` hides data for private servers unless authenticated). |
 
 | Route | HTTP Method | Request Body / Params | Middleware | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
-| **`/api/auth/register`** | `POST` | `{ username, email, password }` | None | Sign up new user, generate initials avatar, issue JWT token. |
-| **`/api/auth/login`** | `POST` | `{ email, password }` | None | Authenticate user, verify hashed credentials, issue JWT token. |
+| **`/api/auth/register`** | `POST` | `{ username, email, password, birthdate }` | None | Initiates registration, checks age limit, generates initials avatar, hashes password, saves pending user, and dispatches dynamic OTP. |
+| **`/api/auth/verify-otp`** | `POST` | `{ email, code }` | None | Verifies OTP code. If valid, marks user as verified, sets HTTP-only cookie, and returns JWT. |
+| **`/api/auth/resend-otp`** | `POST` | `{ email }` | None | Re-generates and dispatches a fresh OTP code for the user. |
+| **`/api/auth/login`** | `POST` | `{ email, password }` | None | Authenticates credentials, sets secure HTTP-only cookie, and returns JWT token. |
+| **`/api/auth/logout`** | `POST` | None | None | Clears the authenticated `token` HTTP-only session cookie. |
 | **`/api/auth/me`** | `GET` | None | `protect` | Load authenticated user's profile context. |
 | **`/api/auth/users`** | `GET` | None | `protect` | Fetch other registered users in the database to start a DM. |
 | **`/api/users/block/:userId`** | `POST` | `userId` param | `protect` | Toggle blocking/unblocking a target user from sending direct messages. |

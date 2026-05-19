@@ -7,7 +7,7 @@ Welcome to the Discord Clone system. This is a lightweight, high-performance, si
 ## 🚀 Core Features Matrix
 
 ### 👤 1. Identity & Relationship Engine
-* **JWT Secure Authentication**: Instant user registration, secure password hashing using `bcryptjs`, and dynamic login verification.
+* **JWT Secure Authentication & Two-Step Verification (OTP)**: User registration with age checks, dynamic OTP verification delivered via email (with console log fallbacks), secure password hashing using `bcryptjs`, and persistent sign-in using secure, HTTP-only session cookies.
 * **Initials Avatars**: Generates customized visual SVG avatars automatically on registration via DiceBear seed strings.
 * **Double-Tiered Presence Synchronization**: Real-time status tracking split into socket-driven `systemStatus` (`online`, `offline`) and manual `userStatusPreference` (`auto`, `online`, `idle`, `dnd`, `offline`) override states, synchronized instantly across visual status rings.
 * **Age Validation**: Secure birthdate tracking (`birthdate` schema attribute) to validate age categories at registration on the client and backend.

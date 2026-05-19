@@ -62,7 +62,7 @@ const messageSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
   isPinned: {
@@ -84,6 +84,10 @@ const messageSchema = new mongoose.Schema({
   anonymousSenderName: {
     type: String,
     trim: true
+  },
+  isSystem: {
+    type: Boolean,
+    default: false
   },
   reactions: [reactionSchema]
 }, {
