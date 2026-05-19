@@ -173,6 +173,9 @@ app.use(errorHandler);
 // --- Socket.io Logic ---
 const activeConnections = new Map(); // userId string -> Set of socket.id strings
 
+// In-memory voice room state: channelId -> Map<userId, { peerId, username, displayName, avatar }>
+const voiceRooms = new Map();
+
 const broadcastPresence = async (userId, status) => {
   try {
     const userServers = await ServerModel.find({ 'members.user': userId });
@@ -374,6 +377,113 @@ io.on('connection', async (socket) => {
     });
   });
 
+  // ─────────────────────────────────────────────
+  // 🎙️ PeerJS Voice / Video Channel Signaling
+  // ─────────────────────────────────────────────
+
+  /**
+   * join_voice — user enters a voice/video channel.
+   * Payload: { channelId, peerId }
+   *
+   * 1. Verifies the user is a member of the parent server.
+   * 2. Joins the Socket.io voice room so they receive future events.
+   * 3. Sends the joining user the full list of existing participants
+   *    (so their client can call each existing peer).
+   * 4. Broadcasts the new participant's peerId to everyone already
+   *    in the room (so they can call back).
+   * 5. Records the participant in the voiceRooms in-memory map.
+   */
+  socket.on('join_voice', async ({ channelId, peerId }) => {
+    try {
+      if (!channelId || !peerId) {
+        return socket.emit('error', { message: 'join_voice requires channelId and peerId' });
+      }
+
+      // Verify server membership
+      const server = await ServerModel.findOne({ 'categories.channels._id': channelId });
+      if (!server) {
+        return socket.emit('error', { message: 'Voice channel not found' });
+      }
+      const isMember = server.members.some(m => m.user && m.user.toString() === userIdStr);
+      if (!isMember) {
+        return socket.emit('error', { message: 'Access Denied: Not a member of this server' });
+      }
+
+      const voiceRoom = `voice_${channelId}`;
+
+      // Initialise room map if needed
+      if (!voiceRooms.has(channelId)) {
+        voiceRooms.set(channelId, new Map());
+      }
+      const roomParticipants = voiceRooms.get(channelId);
+
+      // Build participant info for this user
+      const participantInfo = {
+        userId: userIdStr,
+        peerId,
+        username: socket.user.username,
+        displayName: socket.user.displayName || socket.user.username,
+        avatar: socket.user.avatar || null,
+      };
+
+      // ① Send the new joiner the current participant list BEFORE adding themselves
+      const existingParticipants = Array.from(roomParticipants.values());
+      socket.emit('voice_room_participants', {
+        channelId,
+        participants: existingParticipants,
+      });
+
+      // ② Broadcast the new peer to everyone already in the room
+      socket.to(voiceRoom).emit('user_joined_voice', {
+        channelId,
+        ...participantInfo,
+      });
+
+      // ③ Join Socket.io room & record in-memory
+      socket.join(voiceRoom);
+      socket.currentVoiceChannel = channelId; // Track for anti-ghosting on disconnect
+      roomParticipants.set(userIdStr, participantInfo);
+
+      console.log(`🎙️ ${socket.user.username} joined voice channel ${channelId} with peerId ${peerId}`);
+    } catch (err) {
+      console.error('Error handling join_voice:', err);
+      socket.emit('error', { message: 'Failed to join voice channel' });
+    }
+  });
+
+  /**
+   * leave_voice — user explicitly leaves a voice/video channel.
+   * Payload: { channelId }
+   *
+   * Removes them from the voiceRooms map, leaves the Socket.io room,
+   * and broadcasts 'user_left_voice' to remaining participants.
+   */
+  socket.on('leave_voice', ({ channelId }) => {
+    if (!channelId) return;
+
+    const voiceRoom = `voice_${channelId}`;
+    const roomParticipants = voiceRooms.get(channelId);
+
+    if (roomParticipants) {
+      roomParticipants.delete(userIdStr);
+      // Clean up empty rooms
+      if (roomParticipants.size === 0) {
+        voiceRooms.delete(channelId);
+      }
+    }
+
+    socket.leave(voiceRoom);
+    socket.currentVoiceChannel = null;
+
+    // Notify remaining peers so they can tear down their WebRTC connections
+    io.to(voiceRoom).emit('user_left_voice', {
+      channelId,
+      userId: userIdStr,
+    });
+
+    console.log(`🔇 ${socket.user.username} left voice channel ${channelId}`);
+  });
+
   // Reactions
   socket.on('add_reaction', async ({ messageId, emoji, isAnonymous }) => {
     try {
@@ -471,6 +581,25 @@ io.on('connection', async (socket) => {
   // Disconnect handler
   socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.user.username} (${socket.id})`);
+
+    // ── Anti-Ghosting: auto-evict from any active voice channel ──
+    const activeVoiceChannel = socket.currentVoiceChannel;
+    if (activeVoiceChannel) {
+      const voiceRoom = `voice_${activeVoiceChannel}`;
+      const roomParticipants = voiceRooms.get(activeVoiceChannel);
+      if (roomParticipants) {
+        roomParticipants.delete(userIdStr);
+        if (roomParticipants.size === 0) {
+          voiceRooms.delete(activeVoiceChannel);
+        }
+      }
+      // Notify remaining peers so they tear down the dead WebRTC connection
+      io.to(voiceRoom).emit('user_left_voice', {
+        channelId: activeVoiceChannel,
+        userId: userIdStr,
+      });
+      console.log(`👻 Anti-ghost: removed ${socket.user.username} from voice channel ${activeVoiceChannel}`);
+    }
 
     const userSockets = activeConnections.get(userIdStr);
     if (userSockets) {
