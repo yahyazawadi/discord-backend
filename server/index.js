@@ -111,7 +111,7 @@ server.on('upgrade', (req, socket, head) => {
 
 // DDoS / Rate Limiting (100 requests per 15 minutes per IP)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many requests from this IP, please try again later.',
 });
@@ -141,7 +141,7 @@ app.use('/api/messages', messageRoutes);
 app.get('/api/giphy/search', async (req, res, next) => {
   try {
     const { q, limit, custom_key } = req.query;
-    const apiKey = custom_key || process.env.GIPHY_API_KEY || 'ExGGBvhojYdg1lK3gQrt6JZoMJbuAMYo';
+    const apiKey = custom_key || process.env.GIPHY_API_KEY;
     const limitVal = limit || 20;
     const url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(q || '')}&limit=${limitVal}&rating=g`;
     const response = await fetch(url);
@@ -179,7 +179,7 @@ const broadcastPresence = async (userId, status) => {
     userServers.forEach(srv => {
       io.to(`server_${srv._id}`).emit('presence_update', { userId, status });
     });
-    
+
     const userConversations = await Conversation.find({ participants: userId });
     userConversations.forEach(conv => {
       io.to(`conversation_${conv._id}`).emit('presence_update', { userId, status });
@@ -301,7 +301,7 @@ io.on('connection', async (socket) => {
             const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
             const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
             anonymousSenderName = `${randomAdj} ${randomNoun}`;
-            
+
             await User.findByIdAndUpdate(socket.user._id, {
               $push: { anonymousNames: { contextId, anonymousName: anonymousSenderName } }
             });
@@ -429,7 +429,7 @@ io.on('connection', async (socket) => {
           const freshUser = await User.findById(socket.user._id);
           let anonRecord = freshUser.anonymousNames.find(n => n.contextId.toString() === contextId.toString());
           let anonymousName = '';
-          
+
           if (anonRecord) {
             anonymousName = anonRecord.anonymousName;
           } else {
@@ -438,12 +438,12 @@ io.on('connection', async (socket) => {
             const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
             const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
             anonymousName = `${randomAdj} ${randomNoun}`;
-            
+
             await User.findByIdAndUpdate(socket.user._id, {
               $push: { anonymousNames: { contextId, anonymousName } }
             });
           }
-          
+
           reaction.anonymousReactors.push({ anonymousName, realUserId: socket.user._id });
         } else {
           reaction.users.push(socket.user._id);
@@ -471,14 +471,14 @@ io.on('connection', async (socket) => {
   // Disconnect handler
   socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.user.username} (${socket.id})`);
-    
+
     const userSockets = activeConnections.get(userIdStr);
     if (userSockets) {
       userSockets.delete(socket.id);
       if (userSockets.size === 0) {
         activeConnections.delete(userIdStr);
         await User.findByIdAndUpdate(socket.user._id, { systemStatus: 'offline' });
-        
+
         // Broadcast presence update
         const resolvedStatus = socket.user.userStatusPreference === 'auto' ? 'offline' : socket.user.userStatusPreference;
         await broadcastPresence(userIdStr, resolvedStatus);
