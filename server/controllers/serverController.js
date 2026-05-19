@@ -409,17 +409,22 @@ export const kickMember = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cannot kick the server owner' });
     }
 
-    // Remove member
-    server.members = server.members.filter(
-      (m) => m.user.toString() !== userId
+    // Remove member and admin atomically to prevent Mongoose array reference issues
+    await Server.updateOne(
+      { _id: serverId },
+      { 
+        $pull: { 
+          members: { user: userId },
+          admins: userId 
+        } 
+      }
     );
 
-    // Remove admin status if they were admin
-    server.admins = server.admins.filter(
-      (adminId) => adminId.toString() !== userId
-    );
-
-    await server.save();
+    const io = req.app.get('io');
+    if (io) {
+      // Emit to the specific user that they were kicked, using their user room if configured, or globally
+      io.emit('user_removed_from_server', { serverId, userId, action: 'kicked' });
+    }
 
     res.status(200).json({ success: true, message: 'User kicked successfully' });
   } catch (error) {
@@ -452,20 +457,25 @@ export const banMember = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cannot ban the server owner' });
     }
 
-    // Remove member & admin
-    server.members = server.members.filter(
-      (m) => m.user.toString() !== userId
-    );
-    server.admins = server.admins.filter(
-      (adminId) => adminId.toString() !== userId
+    // Remove member & admin, and add to bannedUsers atomically
+    await Server.updateOne(
+      { _id: serverId },
+      { 
+        $pull: { 
+          members: { user: userId },
+          admins: userId 
+        },
+        $addToSet: {
+          bannedUsers: userId
+        }
+      }
     );
 
-    // Add to ban list if not already there
-    if (!server.bannedUsers.includes(userId)) {
-      server.bannedUsers.push(userId);
+    const io = req.app.get('io');
+    if (io) {
+      // Notify clients
+      io.emit('user_removed_from_server', { serverId, userId, action: 'banned' });
     }
-
-    await server.save();
 
     res.status(200).json({ success: true, message: 'User banned successfully' });
   } catch (error) {

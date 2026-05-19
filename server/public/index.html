@@ -2460,6 +2460,24 @@
           logTo('presence-console', `Socket Error: ${err.message}`, 'error');
         });
 
+        socket.on('user_removed_from_server', ({ serverId, userId, action }) => {
+          if (userId === currentUserId) {
+            logTo('presence-console', `You were ${action} from server ${serverId}`, 'warning');
+            if (selectedServerId === serverId) {
+              alert(`You have been ${action} from this server.`);
+              selectedServerId = null;
+              currentActiveRoom = null;
+              document.getElementById('middle-pane-content').innerHTML = `
+                <div class="glass-panel" style="display:flex; height:100%; align-items:center; justify-content:center; color:#888;">
+                  You were ${action}.
+                </div>
+              `;
+              document.getElementById('right-pane-content').innerHTML = '';
+            }
+            loadServers(); // Refresh sidebar to remove the server
+          }
+        });
+
         // Listen for message broadcasts
         socket.on('receive_message', (msg) => {
           const msgRoomId = msg.channel || msg.conversation;
