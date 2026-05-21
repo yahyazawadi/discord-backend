@@ -1330,6 +1330,13 @@
               <input type="number" id="invite-uses" value="0">
             </div>
             <button class="btn" onclick="handleCreateInvite()">Create 8-Digit Invite</button>
+            <div id="generated-invite-container" style="margin-top: 16px; display: none;">
+              <label style="display: block; font-weight: bold; margin-bottom: 6px; color: var(--text-main); font-size: 12px;">Generated Invite Link</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="generated-invite-link" readonly style="flex: 1; padding: 8px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: var(--success); font-family: monospace; font-size: 13px;">
+                <button class="btn btn-secondary" onclick="copyGeneratedInviteLink()" style="padding: 0 12px; font-size: 12px;">📋 Copy</button>
+              </div>
+            </div>
           </div>
 
           <!-- Join Server -->
@@ -1399,6 +1406,96 @@
                 <div style="font-size: 40px; margin-bottom: 12px;">👋</div>
                 <h3>Welcome to Discord Diagnostic!</h3>
                 <p style="font-size: 13px; max-width: 320px; margin: 8px auto 0; line-height: 1.4;">Select a Server Channel from the sidebar or start a Direct Message to start communicating instantly.</p>
+              </div>
+            </div>
+
+            <!-- Voice / Video Grid Container -->
+            <div id="voice-chat-container" style="display: none; flex: 1; flex-direction: column; background: var(--bg-tertiary); overflow: hidden; position: relative;">
+              
+              <!-- Join overlay (shown before joining) -->
+              <div id="voice-join-overlay" style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 16px; padding: 40px;">
+                <div style="font-size: 52px;">🔊</div>
+                <h3 style="font-family: 'Space Grotesk', sans-serif; color: var(--text-main); margin: 0;">Voice Channel</h3>
+                <div id="voice-status-text" style="color: var(--text-muted); text-align: center; font-size: 13px;">Click Join Voice to connect your mic and camera</div>
+                <button class="btn btn-primary" onclick="joinVoiceChannel()" id="join-voice-btn" style="padding: 12px 32px; font-size: 15px; border-radius: 24px;">📞 Join Voice</button>
+              </div>
+
+              <!-- Active voice area (shown after joining) -->
+              <div id="voice-active-area" style="display: none; flex-direction: column; flex: 1; overflow: hidden;">
+                
+                <!-- Video grid -->
+                <div id="video-grid" style="flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 16px; overflow-y: auto; align-content: start;">
+                </div>
+
+                <!-- Control bar -->
+                <div id="voice-control-bar" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; background: var(--bg-secondary); border-top: 1px solid var(--border-color); flex-shrink: 0;">
+
+                  <!-- Mic toggle -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <button id="btn-toggle-mic" onclick="toggleMic()" title="Toggle Microphone"
+                      style="width: 48px; height: 48px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; background: var(--bg-tertiary); color: var(--text-main); transition: all 0.18s; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                      🎤
+                    </button>
+                    <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Mic</span>
+                  </div>
+
+                  <!-- Camera toggle -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <button id="btn-toggle-cam" onclick="toggleCamera()" title="Toggle Camera"
+                      style="width: 48px; height: 48px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; background: #ed4245; color: #fff; transition: all 0.18s; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                      📵
+                    </button>
+                    <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Camera</span>
+                  </div>
+
+                  <!-- Screen share -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <button id="btn-share-screen" onclick="toggleScreenShare()" title="Share Screen"
+                      style="width: 48px; height: 48px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; background: var(--bg-tertiary); color: var(--text-main); transition: all 0.18s; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                      🖥️
+                    </button>
+                    <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Screen</span>
+                  </div>
+
+                  <!-- Deafen (mute all audio in/out) -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <button id="btn-deafen" onclick="toggleDeafen()" title="Deafen (mute all audio)"
+                      style="width: 48px; height: 48px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; background: var(--bg-tertiary); color: var(--text-main); transition: all 0.18s; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                      🔊
+                    </button>
+                    <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Deafen</span>
+                  </div>
+
+                  <!-- Divider -->
+                  <div style="width: 1px; height: 36px; background: var(--border-color); margin: 0 4px;"></div>
+
+                  <!-- Status text -->
+                  <div id="voice-active-status" style="color: var(--text-muted); font-size: 11px; text-align: center; min-width: 80px; line-height: 1.4;">
+                    🔴 Live
+                  </div>
+
+                  <!-- Divider -->
+                  <div style="width: 1px; height: 36px; background: var(--border-color); margin: 0 4px;"></div>
+
+                  <!-- Leave -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <button id="leave-voice-btn" onclick="leaveVoiceChannel()" title="Leave Voice Channel"
+                      style="width: 48px; height: 48px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; background: #ed4245; color: #fff; transition: all 0.18s; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(237,66,69,0.4);">
+                      📞
+                    </button>
+                    <span style="font-size: 9px; color: #ed4245; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Leave</span>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Voice Log (collapsible, bottom of join overlay) -->
+              <div style="padding: 8px 16px; background: var(--bg-secondary); border-top: 1px solid var(--border-color); max-height: 120px; overflow-y: auto;" id="voice-log-panel">
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                  <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px;">Voice Log</span>
+                  <button onclick="document.getElementById('voice-log').innerHTML=''" style="background: none; border: none; color: var(--text-muted); font-size: 10px; cursor: pointer; margin-left: auto;">Clear</button>
+                </div>
+                <div id="voice-log" style="font-family: monospace; font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px;"></div>
               </div>
             </div>
 
@@ -1534,8 +1631,9 @@
     </div>
   </main>
 
-  <!-- Import socket.io-client -->
+  <!-- Import socket.io-client & PeerJS -->
   <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script>
     // State values
     let activeTab = 'auth';
@@ -1550,6 +1648,12 @@
     let typingTimeout = null;
     let uploadedAttachments = [];
     let unreadCounts = {};
+
+    // Voice / PeerJS State
+    let peer = null;
+    let localVoiceStream = null;
+    let activeVoiceCalls = new Map();
+    let isVoiceActive = false;
 
     // Helper: compress image file to WebP blob client-side
     function compressImageToWebP(file, maxDimension = 1200, quality = 0.8) {
@@ -1593,10 +1697,27 @@
       });
     }
 
+    // Global variable to keep track of a pending invite parameter on load
+    window.pendingInviteCode = null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteParam = urlParams.get('invite');
+    if (inviteParam) {
+      window.pendingInviteCode = inviteParam;
+      // Clean up the URL query parameters so the address bar stays pristine
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     // Set initial values — validate token before trusting it
     if (token) {
       document.getElementById('auth-status-badge').innerText = 'Authenticated (Token Saved)';
       document.getElementById('auth-status-badge').classList.add('verified');
+
+      if (window.pendingInviteCode) {
+        setTimeout(() => {
+          logTo('auth-console', `Detected pending invite link for code: "${window.pendingInviteCode}". Verifying session...`, 'info');
+        }, 100);
+      }
+
       fetchProfile().catch(() => {
         // Token is stale or invalid — clear it and land on auth tab
         token = null;
@@ -1605,6 +1726,12 @@
         document.getElementById('auth-status-badge').classList.remove('verified');
         switchTab('auth');
       });
+    } else {
+      if (window.pendingInviteCode) {
+        setTimeout(() => {
+          logTo('auth-console', `⚠️ PENDING INVITE DETECTED: Code "${window.pendingInviteCode}".\nPlease register or log in above. You will join the server automatically once authenticated!`, 'warning');
+        }, 100);
+      }
     }
 
     function switchTab(tabName) {
@@ -1784,6 +1911,24 @@
 
         // Auto populate the chat sidebar list
         renderSidebarList();
+
+        // Handle auto-redemption if there is a pending invite parameter from the landing URL
+        if (window.pendingInviteCode) {
+          const codeToRedeem = window.pendingInviteCode;
+          window.pendingInviteCode = null; // Clear to prevent multiple prompts
+          
+          logTo('profile-console', `Auto-detected pending server invite code: "${codeToRedeem}". Redirecting to Invites tab...`, 'info');
+          
+          switchTab('invites');
+          document.getElementById('join-invite-code').value = codeToRedeem;
+          logTo('invites-console', `Auto-detected pending invite code: "${codeToRedeem}"`, 'info');
+          
+          setTimeout(() => {
+            if (confirm(`You have a pending invite link to join a server (Code: ${codeToRedeem}). Would you like to join now?`)) {
+              handleJoinServer();
+            }
+          }, 300);
+        }
       } catch (err) {
         logTo('profile-console', err.message, 'error');
         // Re-throw so the init handler can catch a 401 and clear the token
@@ -2382,20 +2527,60 @@
         logTo('invites-console', `Generating invite for server "${srvId}"...`, 'info');
         const data = await apiRequest('/api/servers/invite', 'POST', { serverId: srvId, maxUses });
         logTo('invites-console', JSON.stringify(data, null, 2), 'success');
-        document.getElementById('join-invite-code').value = data.inviteCode;
+        
+        // Generate a fully-formed invite link based on web origin
+        const inviteLink = `${window.location.origin}/invite/${data.inviteCode}`;
+        
+        // Populate the inputs
+        document.getElementById('join-invite-code').value = inviteLink;
+        document.getElementById('generated-invite-link').value = inviteLink;
+        document.getElementById('generated-invite-container').style.display = 'block';
       } catch (err) {
         logTo('invites-console', err.message, 'error');
       }
     }
 
+    function copyGeneratedInviteLink() {
+      const copyText = document.getElementById('generated-invite-link');
+      if (!copyText.value) return;
+      copyText.select();
+      copyText.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(copyText.value);
+      alert('Copied invite link to clipboard!');
+    }
+
+
     async function handleJoinServer() {
-      const inviteCode = document.getElementById('join-invite-code').value;
-      if (!inviteCode) return alert('Enter 8-digit invite code');
+      let inviteInput = document.getElementById('join-invite-code').value.trim();
+      if (!inviteInput) return alert('Enter 8-digit invite code or full URL');
+
+      // Robust extraction of 8-character invite code from the full URL or code input
+      let inviteCode = inviteInput;
+      if (inviteInput.includes('/')) {
+        const parts = inviteInput.split('/');
+        let lastSegment = parts.pop() || parts.pop();
+        if (lastSegment) {
+          lastSegment = lastSegment.split('?')[0];
+          inviteCode = lastSegment;
+        }
+      }
+
+      inviteCode = inviteCode.trim().toUpperCase();
+
+      if (!inviteCode || inviteCode.length !== 8) {
+        return alert('Could not parse a valid 8-character invite code from input.');
+      }
 
       try {
         logTo('invites-console', `Redeeming server invite code "${inviteCode}"...`, 'info');
         const data = await apiRequest(`/api/servers/join/${inviteCode}`, 'POST');
         logTo('invites-console', JSON.stringify(data, null, 2), 'success');
+        
+        // Auto refresh left sidebar list and server list
+        loadMyServers();
+        renderSidebarList();
+        
+        alert(`Successfully joined server!`);
       } catch (err) {
         logTo('invites-console', err.message, 'error');
       }
@@ -2558,6 +2743,42 @@
             updateTypingIndicatorUI();
           }
         });
+
+        // Voice Socket Events
+        socket.on('voice_room_participants', (data) => {
+          if (!currentActiveRoom || data.channelId !== currentActiveRoom.id) return;
+          console.log('[Voice] Received room participants:', data.participants.length);
+          data.participants.forEach(p => {
+            if (p.userId === currentUserId) return; // skip ourselves
+            if (isVoiceActive && peer) {
+              // Peer is already open — call with whatever we're currently streaming
+              connectToNewUser(p.peerId, activeOutgoingStream || localVoiceStream, p.displayName || p.username);
+            } else {
+              // Peer not open yet — buffer for after open
+              _pendingVoiceParticipants.push(p);
+            }
+          });
+        });
+        
+        socket.on('user_joined_voice', (data) => {
+          if (!currentActiveRoom || data.channelId !== currentActiveRoom.id) return;
+          console.log('[Voice] New user joined:', data.username, 'peerId:', data.peerId);
+          // They will call us — we don't need to call them.
+          // But update UI to show they are in the room.
+          const statusEl = document.getElementById('voice-status-text');
+          if (statusEl && isVoiceActive) {
+            statusEl.innerText = `🔊 ${data.displayName || data.username} joined the voice channel`;
+            setTimeout(() => {
+              if (isVoiceActive) statusEl.innerText = '🔊 Connected to Voice Channel!';
+            }, 3000);
+          }
+        });
+        
+        socket.on('user_left_voice', (data) => {
+          console.log('[Voice] User left:', data.userId);
+          // Remove their video if shown
+          // We don't have a direct peerId→userId mapping but the call.on('close') handles cleanup
+        });
       }
     }
 
@@ -2621,7 +2842,7 @@
                   const activeClass = (currentActiveRoom && currentActiveRoom.type === 'channel' && currentActiveRoom.id === chan._id) ? 'active' : '';
                   const item = document.createElement('div');
                   item.className = `chat-item ${activeClass}`;
-                  item.onclick = () => selectRoom('channel', chan._id, chan.name);
+                  item.onclick = () => selectRoom('channel', chan._id, chan.name, chan.type);
                   item.innerHTML = `
                     <span>${chan.type === 'voice' ? '🔊' : '#'}</span>
                     <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${chan.name}</span>
@@ -2751,7 +2972,7 @@
       }
     }
 
-    async function selectRoom(type, id, name) {
+    async function selectRoom(type, id, name, channelType = 'text') {
       // Clear unread count for this room
       unreadCounts[id] = 0;
       updateUnreadBadgesUI();
@@ -2765,9 +2986,9 @@
         }
       }
 
-      currentActiveRoom = { type, id, name };
+      currentActiveRoom = { type, id, name, channelType };
       editingMessageId = null; // Reset editing state
-      
+
       // Update hidden fields
       if (type === 'channel') {
         document.getElementById('chat-channel-id').value = id;
@@ -2777,17 +2998,54 @@
         document.getElementById('chat-conversation-id').value = id;
       }
 
-      // 2. Join new socket room
-      if (socket && socket.connected) {
-        if (type === 'channel') {
-          socket.emit('join_channel', { channelId: id });
-        } else {
-          socket.emit('join_conversation', { conversationId: id });
+      // Toggle text vs voice UI
+      const feed = document.getElementById('socket-messages-feed');
+      const typingIndicator = document.getElementById('chat-typing-indicator');
+      const inputArea = document.querySelector('.chat-input-area');
+      const voiceContainer = document.getElementById('voice-chat-container');
+
+      if (channelType === 'voice') {
+        // If switching voice channels, clean up previous
+        if (isVoiceActive) leaveVoiceChannel();
+        
+        feed.style.display = 'none';
+        typingIndicator.style.display = 'none';
+        inputArea.style.display = 'none';
+        voiceContainer.style.display = 'flex';
+        
+        // Reset to join overlay
+        document.getElementById('voice-join-overlay').style.display = 'flex';
+        document.getElementById('voice-active-area').style.display = 'none';
+        document.getElementById('video-grid').innerHTML = '';
+        document.getElementById('voice-status-text').innerText = 'Click Join Voice to connect your mic and camera';
+        document.getElementById('voice-log').innerHTML = '';
+        
+        document.getElementById('chat-active-title').innerHTML = '🔊 ' + name;
+        document.getElementById('btn-show-pins').style.display = 'none';
+        
+        // Highlight active in sidebar
+        document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
+        return; // Don't fetch messages for voice channel
+      } else {
+        // Leaving voice to go to text — clean up voice if active
+        if (isVoiceActive) leaveVoiceChannel();
+
+        feed.style.display = 'flex';
+        typingIndicator.style.visibility = 'hidden';
+        inputArea.style.display = 'block';
+        voiceContainer.style.display = 'none';
+        
+        // 2. Join new socket room
+        if (socket && socket.connected) {
+          if (type === 'channel') {
+            socket.emit('join_channel', { channelId: id });
+          } else {
+            socket.emit('join_conversation', { conversationId: id });
+          }
         }
       }
 
       // 3. Clear typing state & UI
-      const feed = document.getElementById('socket-messages-feed');
       feed.innerHTML = '<div style="color: var(--text-muted); text-align: center; margin-top: 150px;">Loading room messages...</div>';
       
       document.getElementById('chat-typing-indicator').style.visibility = 'hidden';
@@ -3623,7 +3881,437 @@
       closeTextEmojiPicker();
     }
     
-    // Close pickers on outside click
+    // ═══════════════════════════════════════════════════════
+    // PeerJS Voice Chat — Full Implementation
+    // ═══════════════════════════════════════════════════════
+
+    let _pendingVoiceParticipants = [];
+    let screenStream = null;          // active screen capture stream
+    let activeOutgoingStream = null;  // the stream currently sent to remote peers
+    let isMicEnabled = true;
+    let isCameraEnabled = false;      // camera starts OFF (audio-only join)
+    let isScreenSharing = false;
+
+    // ── Logging helper ────────────────────────────────────
+    function voiceLog(msg, level = 'info') {
+      const log = document.getElementById('voice-log');
+      if (!log) return;
+      const colors = { info: '#7289da', warn: '#faa61a', error: '#ed4245', success: '#43b581' };
+      const icons  = { info: 'ℹ', warn: '⚠', error: '✖', success: '✔' };
+      const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const el = document.createElement('div');
+      el.style.cssText = `color:${colors[level]||colors.info}; white-space:pre-wrap;`;
+      el.textContent = `[${ts}] ${icons[level]||'•'} ${msg}`;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+      console.log(`[Voice][${level}] ${msg}`);
+    }
+
+    // ── Show / hide voice overlay vs active area ──────────
+    function _showVoiceOverlay() {
+      document.getElementById('voice-join-overlay').style.display = 'flex';
+      document.getElementById('voice-active-area').style.display  = 'none';
+    }
+    function _showVoiceActive() {
+      document.getElementById('voice-join-overlay').style.display = 'none';
+      document.getElementById('voice-active-area').style.display  = 'flex';
+    }
+
+    // ── Update control bar button state ───────────────────
+    function _updateControlBtn(id, active, activeEmoji, inactiveEmoji, activeColor = '#ed4245') {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.textContent = active ? activeEmoji : inactiveEmoji;
+      btn.style.background = active ? 'var(--bg-tertiary)' : activeColor;
+    }
+
+    // ── Join Voice Channel ────────────────────────────────
+    async function joinVoiceChannel() {
+      if (!socket || !currentActiveRoom || currentActiveRoom.channelType !== 'voice') {
+        voiceLog('Cannot join: not in a voice channel', 'warn');
+        return;
+      }
+      if (isVoiceActive) { voiceLog('Already in voice', 'warn'); return; }
+
+      const channelId = currentActiveRoom.id;
+      _pendingVoiceParticipants = [];
+      isMicEnabled = true;
+      isCameraEnabled = false; // start camera off by default
+      isScreenSharing = false;
+
+      document.getElementById('voice-status-text').innerText = 'Requesting microphone access...';
+      voiceLog('Requesting media permissions...');
+
+      try {
+        // Start with audio only — camera opt-in via button
+        localVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        activeOutgoingStream = localVoiceStream;  // track what we're sending out
+        voiceLog('Microphone acquired ✓', 'success');
+
+        addVideoStream('local-user', localVoiceStream, true, currentUsername || 'You');
+
+        document.getElementById('voice-status-text').innerText = 'Connecting to voice server...';
+        voiceLog('Connecting to PeerJS broker at ' + window.location.host + '/peerjs');
+
+        const peerHost = window.location.hostname;
+        const peerPort = parseInt(window.location.port) || (window.location.protocol === 'https:' ? 443 : 80);
+
+        peer = new Peer({
+          host: peerHost,
+          port: peerPort,
+          path: '/peerjs',
+          secure: window.location.protocol === 'https:',
+          debug: 2,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+            ]
+          }
+        });
+
+        peer.on('open', (peerId) => {
+          voiceLog('PeerJS connected — ID: ' + peerId, 'success');
+          isVoiceActive = true;
+          _showVoiceActive();
+
+          // Update mic button state
+          _updateControlBtn('btn-toggle-mic', true, '🎤', '🔇');
+          _updateControlBtn('btn-toggle-cam', false, '📷', '📵');
+          _updateControlBtn('btn-share-screen', false, '🖥️', '⏹️');
+
+          document.getElementById('voice-active-status').innerHTML = '🔴 Live';
+
+          socket.emit('join_voice', { channelId, peerId });
+          voiceLog('Sent join_voice signal to server');
+
+          // Call any participants buffered before peer opened
+          _pendingVoiceParticipants.forEach(p => {
+            voiceLog(`Calling buffered participant: ${p.displayName || p.username}`);
+            connectToNewUser(p.peerId, activeOutgoingStream || localVoiceStream, p.displayName || p.username);
+          });
+          _pendingVoiceParticipants = [];
+        });
+
+        peer.on('error', (err) => {
+          const msgs = {
+            'unavailable-id' : 'Peer ID conflict — regenerating ID',
+            'network'        : 'Network error — check your connection',
+            'peer-unavailable': 'Remote peer is no longer available',
+            'server-error'   : 'Cannot reach voice broker — is the server running?',
+            'browser-incompatible': 'Your browser does not support WebRTC',
+          };
+          const msg = msgs[err.type] || ('PeerJS error: ' + err.type);
+          voiceLog(msg, 'error');
+          document.getElementById('voice-status-text').innerText = '❌ ' + msg;
+        });
+
+        peer.on('disconnected', () => {
+          voiceLog('PeerJS disconnected from signaling server', 'warn');
+          document.getElementById('voice-active-status').innerHTML = '🟡 Reconnecting...';
+          peer.reconnect();
+        });
+
+        peer.on('close', () => voiceLog('PeerJS peer closed', 'warn'));
+
+        // Incoming calls from other peers
+        peer.on('call', (call) => {
+          const isSharing = isCameraEnabled || isScreenSharing;
+          if (isSharing) {
+            voiceLog(`Ignored incoming audio-only call from ${call.peer} because we are sharing video. Re-calling them with video...`);
+            try { call.close(); } catch(_) {}
+            // Wait slightly for their peer connection to clear, then call them back with video
+            setTimeout(() => {
+              if (activeVoiceCalls.has(call.peer)) {
+                try { activeVoiceCalls.get(call.peer).close(); } catch(_) {}
+                activeVoiceCalls.delete(call.peer);
+              }
+              connectToNewUser(call.peer, activeOutgoingStream, 'Participant');
+            }, 600);
+            return;
+          }
+
+          voiceLog(`Incoming call from peer: ${call.peer}. Answering with audio-only stream.`);
+          call.answer(localVoiceStream);
+          const videoId = 'peer-' + call.peer;
+          call.on('stream', (remoteStream) => {
+            voiceLog(`Remote stream received from ${call.peer}`, 'success');
+            addVideoStream(videoId, remoteStream, false, 'Participant');
+          });
+          activeVoiceCalls.set(call.peer, call);
+          call.on('close', () => { voiceLog(`Call closed: ${call.peer}`); removeVideoStream(videoId); activeVoiceCalls.delete(call.peer); });
+          call.on('error', (e) => { voiceLog(`Call error from ${call.peer}: ${e}`, 'error'); });
+        });
+
+      } catch (err) {
+        voiceLog('Failed to get media: ' + err.message, 'error');
+        document.getElementById('voice-status-text').innerText = '❌ ' + err.message;
+      }
+    }
+
+    // ── Connect to a specific peer ────────────────────────
+    function connectToNewUser(peerId, stream, username) {
+      if (!peer || !stream) return;
+      if (activeVoiceCalls.has(peerId)) { voiceLog(`Already connected to ${peerId}`, 'warn'); return; }
+
+      voiceLog(`Calling ${username || peerId}...`);
+      try {
+        const call = peer.call(peerId, stream);
+        if (!call) { voiceLog(`peer.call() returned null for ${peerId}`, 'warn'); return; }
+
+        const videoId = 'peer-' + peerId;
+        call.on('stream', (remoteStream) => {
+          voiceLog(`Stream from ${username || peerId} received`, 'success');
+          addVideoStream(videoId, remoteStream, false, username || 'Participant');
+        });
+        call.on('close', () => { voiceLog(`Stream from ${username || peerId} closed`); removeVideoStream(videoId); activeVoiceCalls.delete(peerId); });
+        call.on('error', (e) => { voiceLog(`Call error with ${peerId}: ${e}`, 'error'); removeVideoStream(videoId); activeVoiceCalls.delete(peerId); });
+        activeVoiceCalls.set(peerId, call);
+      } catch (err) {
+        voiceLog('connectToNewUser error: ' + err.message, 'error');
+      }
+    }
+
+    // ── Toggle Microphone ─────────────────────────────────
+    function toggleMic() {
+      if (!localVoiceStream) return;
+      isMicEnabled = !isMicEnabled;
+      localVoiceStream.getAudioTracks().forEach(t => t.enabled = isMicEnabled);
+      _updateControlBtn('btn-toggle-mic', isMicEnabled, '🎤', '🔇');
+      voiceLog(isMicEnabled ? 'Microphone unmuted' : 'Microphone muted');
+    }
+
+    // ── Helper: close all calls, wait, then re-call with new stream ──
+    async function _renegotiateWithStream(newStream, labelText) {
+      const peerIds = [...activeVoiceCalls.keys()];
+      if (peerIds.length === 0) {
+        voiceLog('No peers to re-negotiate with');
+        return;
+      }
+
+      voiceLog(`Closing ${peerIds.length} call(s) for re-negotiation...`);
+      activeVoiceCalls.forEach(call => { try { call.close(); } catch(_) {} });
+      activeVoiceCalls.clear();
+      peerIds.forEach(pid => removeVideoStream('peer-' + pid));
+
+      // Wait for WebRTC to fully close before opening new connections
+      await new Promise(r => setTimeout(r, 600));
+
+      peerIds.forEach(pid => {
+        voiceLog(`Re-calling ${pid} → ${labelText}`);
+        connectToNewUser(pid, newStream, labelText);
+      });
+      voiceLog(`Re-negotiation complete — ${peerIds.length} peer(s) re-called`, 'success');
+    }
+
+    // ── Toggle Camera ─────────────────────────────────────
+    async function toggleCamera() {
+      if (!localVoiceStream || !isVoiceActive) return;
+
+      if (isCameraEnabled) {
+        // ── Turn camera off ────────────────────────────────
+        voiceLog('Turning camera off...');
+        const videoTracks = localVoiceStream.getVideoTracks();
+        videoTracks.forEach(t => { t.stop(); localVoiceStream.removeTrack(t); });
+
+        const localVid = document.getElementById('local-user');
+        if (localVid) localVid.srcObject = localVoiceStream;
+
+        isCameraEnabled = false;
+        _updateControlBtn('btn-toggle-cam', false, '📷', '📵', '#ed4245');
+        activeOutgoingStream = localVoiceStream; // back to audio-only
+
+        await _renegotiateWithStream(localVoiceStream, 'Participant');
+        voiceLog('Camera off — remote peers see audio only');
+
+      } else {
+        // ── Turn camera on ─────────────────────────────────
+        try {
+          voiceLog('Requesting camera access...');
+          const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const videoTrack = camStream.getVideoTracks()[0];
+          localVoiceStream.addTrack(videoTrack);
+
+          const localVid = document.getElementById('local-user');
+          if (localVid) localVid.srcObject = localVoiceStream;
+
+          isCameraEnabled = true;
+          _updateControlBtn('btn-toggle-cam', true, '📷', '📵');
+          activeOutgoingStream = localVoiceStream; // now has video track
+
+          await _renegotiateWithStream(localVoiceStream, 'Participant');
+          voiceLog('Camera on — remote peers can see you', 'success');
+        } catch (err) {
+          voiceLog('Camera error: ' + err.message, 'error');
+        }
+      }
+    }
+
+    // ── Toggle Screen Share ───────────────────────────────
+    async function toggleScreenShare() {
+      if (!localVoiceStream || !isVoiceActive) return;
+
+      if (isScreenSharing) {
+        // ── Stop screen share ──────────────────────────────
+        voiceLog('Stopping screen share...');
+        if (screenStream) {
+          screenStream.getTracks().forEach(t => t.stop());
+          screenStream = null;
+        }
+
+        const localVid = document.getElementById('local-user');
+        if (localVid) localVid.srcObject = localVoiceStream;
+
+        isScreenSharing = false;
+        _updateControlBtn('btn-share-screen', false, '🖥️', '⏹️');
+        activeOutgoingStream = localVoiceStream; // back to audio-only
+
+        await _renegotiateWithStream(localVoiceStream, 'Participant');
+        voiceLog('Screen share stopped — back to audio only', 'warn');
+
+      } else {
+        // ── Start screen share ─────────────────────────────
+        try {
+          voiceLog('Requesting screen capture...');
+          screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: 'always', displaySurface: 'monitor' },
+            audio: false
+          });
+          const screenTrack = screenStream.getVideoTracks()[0];
+
+          // Combined stream: mic audio + screen video
+          const combined = new MediaStream();
+          localVoiceStream.getAudioTracks().forEach(t => combined.addTrack(t));
+          combined.addTrack(screenTrack);
+
+          // Update local preview
+          const localVid = document.getElementById('local-user');
+          if (localVid) localVid.srcObject = combined;
+
+          isScreenSharing = true;
+          _updateControlBtn('btn-share-screen', true, '⏹️', '🖥️', '#43b581');
+          activeOutgoingStream = combined; // now sharing screen
+
+          // Re-call all peers with the combined stream AFTER delay
+          await _renegotiateWithStream(combined, 'Screen Share');
+          voiceLog('Screen share active — remote peers are receiving your screen', 'success');
+
+          // Browser "Stop Sharing" button
+          screenTrack.onended = () => {
+            voiceLog('Screen share ended by browser', 'warn');
+            if (isScreenSharing) toggleScreenShare();
+          };
+        } catch (err) {
+          screenStream = null;
+          isScreenSharing = false;
+          _updateControlBtn('btn-share-screen', false, '🖥️', '⏹️');
+          if (err.name === 'NotAllowedError') voiceLog('Screen share cancelled', 'warn');
+          else voiceLog('Screen share error: ' + err.message, 'error');
+        }
+      }
+    }
+
+    // ── Add video/audio tile to grid ──────────────────────
+    function addVideoStream(id, stream, muted, labelText) {
+      const grid = document.getElementById('video-grid');
+      if (!grid) return;
+
+      let wrapper = document.getElementById(id + '-wrapper');
+      if (!wrapper) {
+        wrapper = document.createElement('div');
+        wrapper.id = id + '-wrapper';
+        Object.assign(wrapper.style, {
+          position: 'relative', background: '#1a1a2e', borderRadius: '10px',
+          overflow: 'hidden', aspectRatio: '16/9', boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+        });
+
+        const video = document.createElement('video');
+        video.id = id;
+        Object.assign(video.style, { width: '100%', height: '100%', objectFit: 'cover', display: 'block' });
+        video.autoplay = true;
+        video.playsInline = true;
+        if (muted) video.muted = true;
+
+        const label = document.createElement('div');
+        label.id = id + '-label';
+        label.innerText = labelText || 'User';
+        Object.assign(label.style, {
+          position: 'absolute', bottom: '8px', left: '8px',
+          background: 'rgba(0,0,0,0.65)', color: '#fff',
+          padding: '2px 10px', borderRadius: '20px', fontSize: '11px',
+          fontFamily: "'Space Grotesk', sans-serif", fontWeight: '600'
+        });
+
+        wrapper.appendChild(video);
+        wrapper.appendChild(label);
+        grid.appendChild(wrapper);
+      }
+
+      const videoEl = document.getElementById(id);
+      if (videoEl) videoEl.srcObject = stream;
+    }
+
+    // ── Remove a video tile ───────────────────────────────
+    function removeVideoStream(id) {
+      const wrapper = document.getElementById(id + '-wrapper');
+      if (wrapper) wrapper.remove();
+    }
+
+    // ── Leave Voice Channel ───────────────────────────────
+    function leaveVoiceChannel() {
+      if (!isVoiceActive && !peer && !localVoiceStream) return;
+      voiceLog('Leaving voice channel...');
+
+      const wasActive = isVoiceActive;
+      isVoiceActive = false;
+      isMicEnabled = true;
+      isCameraEnabled = false;
+      isScreenSharing = false;
+      activeOutgoingStream = null;
+      _pendingVoiceParticipants = [];
+
+      if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
+
+      if (localVoiceStream) {
+        localVoiceStream.getTracks().forEach(t => t.stop());
+        localVoiceStream = null;
+      }
+
+      if (peer) { try { peer.destroy(); } catch (_) {} peer = null; }
+
+      activeVoiceCalls.forEach(call => { try { call.close(); } catch (_) {} });
+      activeVoiceCalls.clear();
+
+      const grid = document.getElementById('video-grid');
+      if (grid) grid.innerHTML = '';
+
+      _showVoiceOverlay();
+      document.getElementById('voice-status-text').innerText = 'You left the voice channel';
+      voiceLog('Left voice channel', 'warn');
+
+      if (wasActive && socket && currentActiveRoom) {
+        socket.emit('leave_voice', { channelId: currentActiveRoom.id });
+      }
+    }
+
+    // ── Toggle Deafen (mute all output + input) ──────────
+    let isDeafened = false;
+    function toggleDeafen() {
+      isDeafened = !isDeafened;
+      // Mute/unmute local mic
+      if (localVoiceStream) {
+        localVoiceStream.getAudioTracks().forEach(t => t.enabled = !isDeafened);
+      }
+      // Mute/unmute all remote audio
+      document.querySelectorAll('#video-grid video').forEach(v => {
+        if (v.id !== 'local-user') v.muted = isDeafened;
+      });
+      // Also mute mic state
+      isMicEnabled = !isDeafened;
+      _updateControlBtn('btn-toggle-mic', isMicEnabled, '🎤', '🔇');
+      _updateControlBtn('btn-deafen', !isDeafened, '🔊', '🔕', '#ed4245');
+      voiceLog(isDeafened ? 'Deafened — all audio muted' : 'Undeafened', isDeafened ? 'warn' : 'info');
+    }
     document.addEventListener('click', (e) => {
       const giphyPopover = document.getElementById('chat-giphy-popover');
       const emojiPopover = document.getElementById('chat-text-emoji-popover');

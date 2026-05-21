@@ -85,7 +85,8 @@ server.removeAllListeners('upgrade');
 // Initialize PeerJS Server
 const peerServer = ExpressPeerServer(server, {
   debug: process.env.NODE_ENV !== 'production',
-  path: '/peerjs',
+  // NOTE: do NOT set path here — we mount at /peerjs via app.use below.
+  // Setting path here AND mounting at /peerjs creates a double-path (/peerjs/peerjs).
 });
 
 // Use PeerJS router
@@ -136,6 +137,13 @@ if (process.env.NODE_ENV === 'development') {
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/messages', messageRoutes);
+
+// Redirect direct invite links to the frontend with query param
+app.get('/invite/:inviteCode', (req, res) => {
+  const { inviteCode } = req.params;
+  res.redirect(`/?invite=${inviteCode.toUpperCase()}`);
+});
+
 
 // Secure GIPHY API Proxy Routes
 app.get('/api/giphy/search', async (req, res, next) => {
