@@ -22,7 +22,9 @@ import inviteTrie from './utils/inviteTrie.js';
 import jwt from 'jsonwebtoken';
 import { broadcastMessageToRoom, broadcastMessageUpdateToRoom } from './utils/socketHelpers.js';
 
-dotenv.config();
+const result = dotenv.config();
+console.log('Dotenv config result:', result);
+console.log('MONGODB_URI:', process.env.MONGODB_URI);
 
 // Connect to MongoDB
 connectDB().then(() => {
