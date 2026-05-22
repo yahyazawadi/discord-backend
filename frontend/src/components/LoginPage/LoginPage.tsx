@@ -20,7 +20,7 @@ export default function LoginPage() {
   }, []);
 
   const API_BASE = window.location.port === '5173' || window.location.port === '3000'
-    ? `http://${window.location.hostname}:5000/api/auth`
+    ? `http://${window.location.hostname}:5001/api/auth`
     : `${window.location.origin}/api/auth`;
 
   // SPA navigation helper
@@ -55,7 +55,8 @@ export default function LoginPage() {
         localStorage.setItem('user', JSON.stringify(data.user));
 
         // Redirect to main voice/text application on successful login
-        window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
+        window.history.pushState({}, '', '/home');
+        window.dispatchEvent(new PopStateEvent('popstate'));
       } else {
         setError(data.error || data.message || 'Login failed. Please check your credentials.');
       }

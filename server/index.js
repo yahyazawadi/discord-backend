@@ -146,11 +146,6 @@ app.use(cors({
 // Serve static files from public directory
 app.use(express.static('public'));
 
-// Catch-all for SPA (Client-side routing)
-app.get('*', (req, res) => {
-  res.sendFile(join(process.cwd(), 'public', 'index.html'));
-});
-
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev')); // Logging
 }
@@ -194,6 +189,11 @@ app.get('/api/giphy/trending', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// Catch-all for SPA (Client-side routing)
+app.get(/.*/, (req, res) => {
+  res.sendFile(join(process.cwd(), 'public', 'index.html'));
 });
 
 // --- Error Handling ---
@@ -651,7 +651,7 @@ io.on('connection', async (socket) => {
 });
 
 // --- Server Startup & Graceful Shutdown ---
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 server.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
@@ -675,5 +675,4 @@ const gracefulShutdown = () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Trigger hot reload after port 5000 release
-
+// Trigger hot reload after port 5001 release - DB path updated

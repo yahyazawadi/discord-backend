@@ -26,7 +26,7 @@ export default function RegisterPage() {
   }, []);
 
   const API_BASE = window.location.port === '5173' || window.location.port === '3000'
-    ? `http://${window.location.hostname}:5000/api/auth`
+    ? `http://${window.location.hostname}:5001/api/auth`
     : `${window.location.origin}/api/auth`;
 
   // SPA navigation helper
@@ -98,7 +98,8 @@ export default function RegisterPage() {
         localStorage.setItem('user', JSON.stringify(data.user));
 
         setTimeout(() => {
-          window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
+          window.history.pushState({}, '', '/home');
+          window.dispatchEvent(new PopStateEvent('popstate'));
         }, 1500);
       } else {
         setError(data.error || 'Verification failed. Please try again.');

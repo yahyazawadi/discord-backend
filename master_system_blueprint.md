@@ -6,13 +6,13 @@ This master documentation is a comprehensive blueprint of your simplified Discor
 
 ## 🏗️ 1. Project Goal & Design Core
 The target is a high-performance, lightweight, deployment-ready Express + Socket.io + PeerJS server. 
-* **Single-Port Architecture**: We bind Express, Socket.io, and PeerJS (`/peerjs`) to the same HTTP listener. The port is always read from `process.env.PORT` (set by the hosting provider at runtime) with a local fallback of `5000`:
+* **Single-Port Architecture**: We bind Express, Socket.io, and PeerJS (`/peerjs`) to the same HTTP listener. The port is always read from `process.env.PORT` (set by the hosting provider at runtime) with a local fallback of `5001`:
   ```js
-  // ✅ MANDATORY — never hardcode 5000 directly
-  const PORT = process.env.PORT || 5000;
+  // ✅ MANDATORY — never hardcode 5001 directly
+  const PORT = process.env.PORT || 5001;
   server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   ```
-  Render and Railway assign their own dynamic `PORT` values (e.g. `10000`). Hardcoding `5000` will cause the process to bind to the wrong port and silently fail in production.
+  Render and Railway assign their own dynamic `PORT` values (e.g. `10000`). Hardcoding `5001` will cause the process to bind to the wrong port and silently fail in production.
 * **Premium UX Features**: Out-of-the-box support for text categories, real-time typing indicators, pinned/edited messages, and unique anonymous messaging/reactions, as well as simple WebRTC voice and video rooms.
 
 ---
@@ -489,7 +489,7 @@ const compressImageToWebP = (file) => {
 ### 📦 Render / Railway Environment Variables:
 ```env
 # PORT is injected automatically by Render/Railway — do NOT set it manually here.
-# process.env.PORT is read at runtime; the fallback in code is 5000 for local dev.
+# process.env.PORT is read at runtime; the fallback in code is 5001 for local dev.
 MONGODB_URI=mongodb+srv://<DB_USER>:<DB_PASSWORD>@<CLUSTER>.mongodb.net/discord-clone
 JWT_SECRET=super_secret_key_change_in_production
 CLIENT_URL=https://your-discord-app.vercel.app
@@ -518,7 +518,7 @@ CLOUDFLARE_R2_BUCKET_NAME=discord-clone-assets
 > import axios from 'axios';
 > 
 > const api = axios.create({
->   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000',
+>   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5001',
 >   withCredentials: true // MANDATORY — matches credentials: true on server
 > });
 > ```
