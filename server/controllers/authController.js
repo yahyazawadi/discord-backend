@@ -450,3 +450,100 @@ export const getBlockedUsers = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Update user profile details
+ * @route   PUT /api/auth/profile
+ * @access  Private
+ */
+export const updateProfile = async (req, res, next) => {
+  const { displayName, avatar, bio, profileBanner } = req.body;
+
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (displayName !== undefined) user.displayName = displayName.trim() || user.username;
+    if (avatar !== undefined) user.avatar = avatar.trim();
+    if (bio !== undefined) user.bio = bio.trim();
+    if (profileBanner !== undefined) user.profileBanner = profileBanner.trim();
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        _id: user._id,
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        avatar: user.avatar,
+        bio: user.bio,
+        profileBanner: user.profileBanner,
+        systemStatus: user.systemStatus,
+        userStatusPreference: user.userStatusPreference,
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get details of any user for the side profile panel (Member Since, Mutual Servers, Mutual Friends)
+ * @route   GET /api/auth/profile/:userId
+ * @access  Private
+ */
+export const getUserProfileDetails = async (req, res, next) => {
+  const { userId } = req.params;
+
+  try {
+    const user = await User.findById(userId).select(
+      'username displayName avatar bio profileBanner systemStatus userStatusPreference createdAt'
+    );
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Mutual Servers
+    const Server = (await import('../models/Server.js')).default;
+    const mutualServers = await Server.find({
+      'members.user': { $all: [req.user._id, userId] }
+    }, 'name icon banner');
+
+    // Mutual Friends (defined as other users whom both req.user and target user have DMs with)
+    const Conversation = (await import('../models/Conversation.js')).default;
+    const userConvs = await Conversation.find({ participants: req.user._id });
+    const targetConvs = await Conversation.find({ participants: userId });
+
+    const userParticipantIds = new Set(
+      userConvs.flatMap(c => c.participants.map(p => p.toString()))
+    );
+    const targetParticipantIds = new Set(
+      targetConvs.flatMap(c => c.participants.map(p => p.toString()))
+    );
+
+    const mutualParticipantIds = Array.from(userParticipantIds).filter(
+      id => targetParticipantIds.has(id) && id !== req.user._id.toString() && id !== userId.toString()
+    );
+
+    const mutualFriends = await User.find(
+      { _id: { $in: mutualParticipantIds } },
+      'username displayName avatar systemStatus userStatusPreference'
+    );
+
+    res.status(200).json({
+      success: true,
+      user,
+      mutualServers,
+      mutualFriends
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+

@@ -65,6 +65,11 @@ const serverSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  banner: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

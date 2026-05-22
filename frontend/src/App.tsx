@@ -16,16 +16,24 @@ export default function App() {
     // Listen for history push/pop
     window.addEventListener('popstate', handleLocationChange);
 
-    // Auto-redirect from root to /login if not logged in, or /home if logged in
-    if (window.location.pathname === '/' || window.location.pathname === '') {
-      const hasToken = localStorage.getItem('token');
+    // Robust route guard redirection
+    const hasToken = localStorage.getItem('token');
+    const path = window.location.pathname;
+
+    if (path === '/home' && !hasToken) {
+      window.history.replaceState({}, '', '/login');
+      setRoute('/login');
+    } else if ((path === '/login' || path === '/register' || path === '/' || path === '') && hasToken) {
+      window.history.replaceState({}, '', '/home');
+      setRoute('/home');
+    } else if (path === '/' || path === '') {
       const nextPath = hasToken ? '/home' : '/login';
       window.history.replaceState({}, '', nextPath);
       setRoute(nextPath);
     }
 
     return () => window.removeEventListener('popstate', handleLocationChange);
-  }, []);
+  }, [route]);
 
   const renderRoute = () => {
     if (route === '/register') {

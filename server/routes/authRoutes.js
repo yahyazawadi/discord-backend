@@ -11,6 +11,8 @@ import {
   blockUser,
   unblockUser,
   getBlockedUsers,
+  updateProfile,
+  getUserProfileDetails,
 } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -24,7 +26,9 @@ router.post('/logout', logoutUser);
 router.get('/me', protect, getMe);
 router.get('/users', protect, getUsers);
 
-// Status and block actions
+// Profile, Status and block actions
+router.put('/profile', protect, updateProfile);
+router.get('/profile/:userId', protect, getUserProfileDetails);
 router.put('/status-preference', protect, updateStatusPreference);
 router.post('/block/:userId', protect, blockUser);
 router.post('/unblock/:userId', protect, unblockUser);

@@ -44,6 +44,16 @@ const userSchema = new mongoose.Schema({
       return `https://api.dicebear.com/7.x/initials/svg?seed=${this.username}`;
     }
   },
+  bio: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  profileBanner: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   systemStatus: {
     type: String,
     enum: ['online', 'offline'],

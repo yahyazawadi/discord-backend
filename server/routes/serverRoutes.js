@@ -3,6 +3,7 @@ import {
   createServer,
   getServers,
   getServerDetails,
+  exploreServers,
   updateServer,
   joinServerByInvite,
   joinServerDirect,
@@ -27,6 +28,7 @@ const router = express.Router();
 // Server collection endpoints
 router.post('/', protect, createServer);
 router.get('/', protect, getServers);
+router.get('/explore', protect, exploreServers);
 
 // Invite generation endpoint
 router.post('/invite', protect, generateServerInvite);

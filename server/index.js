@@ -90,6 +90,7 @@ app.set('io', io);
 
 // Capture Socket.io's upgrade listener
 const socketIoUpgradeListener = server.listeners('upgrade')[0];
+console.log('[Upgrade Routing] Socket.io upgrade listener captured:', !!socketIoUpgradeListener);
 server.removeAllListeners('upgrade');
 
 // Initialize PeerJS Server
@@ -104,26 +105,31 @@ app.use('/peerjs', peerServer);
 
 // Capture PeerJS's upgrade listener
 const peerJsUpgradeListener = server.listeners('upgrade')[0];
+console.log('[Upgrade Routing] PeerJS upgrade listener captured:', !!peerJsUpgradeListener);
 server.removeAllListeners('upgrade');
 
 // Safely route upgrade events to prevent conflicts
 server.on('upgrade', (req, socket, head) => {
   const url = req.url || '';
+  console.log(`[Upgrade Routing] Incoming upgrade request: ${url}`);
   if (url.startsWith('/socket.io') && socketIoUpgradeListener) {
+    console.log('[Upgrade Routing] Routing upgrade to Socket.io');
     socketIoUpgradeListener(req, socket, head);
   } else if (url.startsWith('/peerjs') && peerJsUpgradeListener) {
+    console.log('[Upgrade Routing] Routing upgrade to PeerJS');
     peerJsUpgradeListener(req, socket, head);
   } else {
+    console.warn(`[Upgrade Routing] No listener matches URL: ${url}, destroying socket`);
     socket.destroy();
   }
 });
 
 // --- Middleware ---
 
-// DDoS / Rate Limiting (100 requests per 15 minutes per IP)
+// DDoS / Rate Limiting (Increased to support high-frequency SPA real-time polling)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: process.env.NODE_ENV === 'development' ? 50000 : 2000,
   message: 'Too many requests from this IP, please try again later.',
 });
 app.use('/api', limiter);
@@ -166,7 +172,7 @@ app.get('/invite/:inviteCode', (req, res) => {
 app.get('/api/giphy/search', async (req, res, next) => {
   try {
     const { q, limit, custom_key } = req.query;
-    const apiKey = custom_key || process.env.GIPHY_API_KEY;
+    const apiKey = custom_key || process.env.GIPHY_API_KEY || 'ExGGBvhojYdg1lK3gQrt6JZoMJbuAMYo';
     const limitVal = limit || 20;
     const url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(q || '')}&limit=${limitVal}&rating=g`;
     const response = await fetch(url);
@@ -205,6 +211,41 @@ const activeConnections = new Map(); // userId string -> Set of socket.id string
 
 // In-memory voice room state: channelId -> Map<userId, { peerId, username, displayName, avatar }>
 const voiceRooms = new Map();
+
+// Evict a user from all active voice rooms (ensuring they can only be in one call at a time)
+const evictUserFromAllVoice = (userId) => {
+  const userIdStr = userId.toString();
+  console.log(`[Voice] Running eviction check for user: ${userIdStr}`);
+  for (const [channelId, participantsMap] of voiceRooms.entries()) {
+    if (participantsMap.has(userIdStr)) {
+      console.log(`[Voice] Evicting user ${userIdStr} from voice channel ${channelId}`);
+      participantsMap.delete(userIdStr);
+      if (participantsMap.size === 0) {
+        voiceRooms.delete(channelId);
+      }
+
+      const voiceRoom = `voice_${channelId}`;
+      io.to(voiceRoom).emit('user_left_voice', {
+        channelId,
+        userId: userIdStr
+      });
+
+      // Make all active sockets for this user leave the Socket.io room
+      const userSockets = activeConnections.get(userIdStr);
+      if (userSockets) {
+        userSockets.forEach(socketId => {
+          const s = io.sockets.sockets.get(socketId);
+          if (s) {
+            s.leave(voiceRoom);
+            if (s.currentVoiceChannel === channelId) {
+              s.currentVoiceChannel = null;
+            }
+          }
+        });
+      }
+    }
+  }
+};
 
 const broadcastPresence = async (userId, status) => {
   try {
@@ -433,15 +474,24 @@ io.on('connection', async (socket) => {
         return socket.emit('error', { message: 'join_voice requires channelId and peerId' });
       }
 
-      // Verify server membership
+      // Verify server membership or DM conversation membership
+      let isMember = false;
       const server = await ServerModel.findOne({ 'categories.channels._id': channelId });
-      if (!server) {
-        return socket.emit('error', { message: 'Voice channel not found' });
+      if (server) {
+        isMember = server.members.some(m => m.user && m.user.toString() === userIdStr);
+      } else {
+        const conversation = await Conversation.findById(channelId);
+        if (conversation) {
+          isMember = conversation.participants.some(p => p.toString() === userIdStr);
+        }
       }
-      const isMember = server.members.some(m => m.user && m.user.toString() === userIdStr);
+
       if (!isMember) {
-        return socket.emit('error', { message: 'Access Denied: Not a member of this server' });
+        return socket.emit('error', { message: 'Access Denied: Not authorized for this voice room' });
       }
+
+      // Evict user from any other call first
+      evictUserFromAllVoice(userIdStr);
 
       const voiceRoom = `voice_${channelId}`;
 
@@ -516,6 +566,23 @@ io.on('connection', async (socket) => {
     });
 
     console.log(`🔇 ${socket.user.username} left voice channel ${channelId}`);
+  });
+
+  socket.on('initiate_call', ({ conversationId, type }) => {
+    socket.to(`conversation_${conversationId}`).emit('incoming_call', {
+      conversationId,
+      callerId: userIdStr,
+      callerName: socket.user.displayName || socket.user.username,
+      callerAvatar: socket.user.avatar || null,
+      type
+    });
+  });
+
+  socket.on('decline_call', ({ conversationId }) => {
+    socket.to(`conversation_${conversationId}`).emit('call_declined', {
+      conversationId,
+      userId: userIdStr
+    });
   });
 
   // Reactions
@@ -675,4 +742,4 @@ const gracefulShutdown = () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Trigger hot reload after port 5001 release - DB path updated
+// Trigger hot reload after port 5001 release

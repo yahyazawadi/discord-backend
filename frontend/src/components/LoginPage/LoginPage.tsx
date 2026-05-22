@@ -19,7 +19,7 @@ export default function LoginPage() {
     }
   }, []);
 
-  const API_BASE = window.location.port === '5173' || window.location.port === '3000'
+  const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? `http://${window.location.hostname}:5001/api/auth`
     : `${window.location.origin}/api/auth`;
 

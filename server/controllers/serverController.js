@@ -29,7 +29,7 @@ const slugifyChannelName = (name) => {
  */
 export const createServer = async (req, res) => {
   try {
-    const { name, icon, isPrivate } = req.body;
+    const { name, icon, isPrivate, description, banner } = req.body;
 
     if (!name) {
       return res.status(400).json({ success: false, error: 'Server name is required' });
@@ -74,6 +74,8 @@ export const createServer = async (req, res) => {
     const server = new Server({
       name,
       icon: icon || '',
+      banner: banner || '',
+      description: description || '',
       owner: req.user._id,
       admins: [req.user._id],
       members: [{ user: req.user._id }],
@@ -952,3 +954,25 @@ export const demoteAdmin = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Fetch all public servers or search them by name
+ * GET /api/servers/explore
+ */
+export const exploreServers = async (req, res) => {
+  try {
+    const { search } = req.query;
+    const query = { isPrivate: false };
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+    const servers = await Server.find(query)
+      .populate('owner', '_id username displayName avatar')
+      .populate('members.user', '_id username displayName avatar');
+    
+    res.status(200).json({ success: true, servers });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
