@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './RegisterPage.css';
 
 export default function RegisterPage() {
@@ -123,6 +124,7 @@ export default function RegisterPage() {
   return (
     <div className="register-page">
       <div className="register-bg-overlay" />
+      {/* <FloatingParticles /> */}
 
       <div className="register-card">
         <div className="register-inner">
@@ -199,7 +201,7 @@ export default function RegisterPage() {
 
                 <p className="login-text" style={{ marginTop: '12px' }}>
                   Already have an account?{' '}
-                  <a href="/" onClick={(e) => handleNavigate(e, '/')} className="login-link">Log in</a>
+                  <a href="/login" onClick={(e) => handleNavigate(e, '/login')} className="login-link">Log in</a>
                 </p>
               </form>
             </>

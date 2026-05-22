@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -57,6 +58,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-bg-overlay" />
+      {/* <FloatingParticles /> */}
 
       <div className="login-card">
         <div className="login-inner">

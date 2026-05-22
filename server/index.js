@@ -21,6 +21,7 @@ import Message from './models/Message.js';
 import inviteTrie from './utils/inviteTrie.js';
 import jwt from 'jsonwebtoken';
 import { broadcastMessageToRoom, broadcastMessageUpdateToRoom } from './utils/socketHelpers.js';
+import { join } from 'path';
 
 const result = dotenv.config();
 console.log('Dotenv config result:', result);
@@ -144,6 +145,11 @@ app.use(cors({
 
 // Serve static files from public directory
 app.use(express.static('public'));
+
+// Catch-all for SPA (Client-side routing)
+app.get('*', (req, res) => {
+  res.sendFile(join(process.cwd(), 'public', 'index.html'));
+});
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev')); // Logging
