@@ -1,12 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import gsap from 'gsap';
 import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './LoginPage.css';
 
 export default function LoginPage() {
+  const cardRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (cardRef.current) {
+      gsap.fromTo(cardRef.current,
+        { opacity: 0, y: 30, scale: 0.96 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: 'power3.out', delay: 0.1 }
+      );
+    }
+  }, []);
 
   const API_BASE = window.location.port === '5173' || window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api/auth`
@@ -58,9 +69,9 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-bg-overlay" />
-      {/* <FloatingParticles /> */}
+      <FloatingParticles />
 
-      <div className="login-card">
+      <div className="login-card" ref={cardRef}>
         <div className="login-inner">
 
           <div className="login-header">
