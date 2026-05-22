@@ -43,8 +43,13 @@ export default function LoginPage() {
         }
         localStorage.setItem('user', JSON.stringify(data.user));
 
-        // Redirect to main voice/text application on successful login
-        window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
+        // In dev navigate within the SPA; in production hand off to the backend shell
+        if (window.location.hostname === 'localhost') {
+          window.history.pushState({}, '', '/home');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else {
+          window.location.href = '/';
+        }
       } else {
         setError(data.error || data.message || 'Login failed. Please check your credentials.');
       }
@@ -58,7 +63,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-bg-overlay" />
-      {/* <FloatingParticles /> */}
+      <FloatingParticles />
 
       <div className="login-card">
         <div className="login-inner">

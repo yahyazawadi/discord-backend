@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import LoginPage from './components/LoginPage/LoginPage';
 import RegisterPage from './components/RegisterPage/RegisterPage';
+import HomePage from './components/HomePage/HomePage';
 
 export default function App() {
   const [route, setRoute] = useState(window.location.pathname);
@@ -10,10 +11,8 @@ export default function App() {
       setRoute(window.location.pathname);
     };
 
-    // Listen for history push/pop
     window.addEventListener('popstate', handleLocationChange);
 
-    // Auto-redirect from root to /login
     if (window.location.pathname === '/' || window.location.pathname === '') {
       window.history.replaceState({}, '', '/login');
       setRoute('/login');
@@ -22,9 +21,8 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
-  if (route === '/register') {
-    return <RegisterPage />;
-  }
+  if (route === '/register') return <RegisterPage />;
+  if (route === '/home') return <HomePage />;
 
   return <LoginPage />;
 }

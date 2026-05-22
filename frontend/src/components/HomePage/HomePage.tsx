@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import './HomePage.css';
 
 const KATARA_AVATAR =
-  'https://api.builder.io/api/v1/image/assets/TEMP/c28839c037b9be1e7d5f00340f0e75f99cd966c2?width=200';
+  'https://api.builder.io/api/v1/image/assets/TEMP/8f7ee95d2fbd6c732b53ec5d4d1b542d8bcb2103?width=200';
 
 type StatusType = 'online' | 'idle' | 'dnd' | 'offline' | 'streaming' | 'mobile';
 
@@ -18,16 +18,16 @@ const DM_USERS: DMUser[] = [
   { id: '2', name: 'Peppe',  status: 'idle',      color: '#e67e22' },
   { id: '3', name: 'Phibi',  status: 'dnd',       color: '#3498db' },
   { id: '4', name: 'Cap',    status: 'offline',   color: '#795548' },
-  { id: '5', name: 'Wumpus', status: 'streaming', color: '#1a252f' },
+  { id: '5', name: 'Wumpus', status: 'streaming', color: '#593695' },
   { id: '6', name: 'Locke',  status: 'mobile',    color: '#c0392b' },
   { id: '7', name: 'Clyde',  status: 'online',    color: '#576574' },
 ];
 
 const SERVERS = [
-  { id: 's1', gradient: 'linear-gradient(135deg, #e056fd 0%, #686de0 100%)' },
+  { id: 's1', image: 'https://api.builder.io/api/v1/image/assets/TEMP/8f7ee95d2fbd6c732b53ec5d4d1b542d8bcb2103?width=100' },
   { id: 's2', gradient: 'linear-gradient(135deg, #f9ca24 0%, #f0932b 100%)' },
-  { id: 's3', gradient: 'linear-gradient(135deg, #e056fd 0%, #686de0 100%)' },
-];
+  { id: 's3', image: 'https://api.builder.io/api/v1/image/assets/TEMP/8f7ee95d2fbd6c732b53ec5d4d1b542d8bcb2103?width=100' },
+] as const;
 
 const MESSAGES = [
   {
@@ -168,7 +168,11 @@ function SideNavbar() {
         <div key={server.id} className="icon-bar-item">
           <button
             className="icon-bar-server"
-            style={{ background: server.gradient }}
+            style={
+              'image' in server
+                ? { backgroundImage: `url(${server.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                : { background: server.gradient }
+            }
             aria-label={`Server ${server.id}`}
           />
         </div>

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './RegisterPage.css';
 
 export default function RegisterPage() {
