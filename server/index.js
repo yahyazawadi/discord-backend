@@ -73,7 +73,14 @@ const server = http.createServer(app);
 // Initialize Socket.io
 export const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || '*',
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.startsWith('http://localhost:')) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
   },
 });
@@ -124,7 +131,14 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10kb' })); // Body parser & limit size
 app.use(customXss); // Sanitize data against XSS
 app.use(cors({
-  origin: process.env.CLIENT_URL || '*',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 

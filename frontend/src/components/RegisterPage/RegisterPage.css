@@ -1,0 +1,211 @@
+.register-page {
+    min-height: 100vh;
+    width: 100%;
+    background-color: #0D1114;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    padding: 40px 20px;
+    box-sizing: border-box;
+}
+
+.register-bg-overlay {
+    position: absolute;
+    inset: 0;
+    background-image: url('https://api.builder.io/api/v1/image/assets/TEMP/c4cb36e52c5ceffac3fe2c1e71a92494a7b18b47?width=3957');
+    background-size: cover;
+    background-position: center;
+    transform: rotate(-7.444deg) scale(1.3);
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.register-card {
+    position: relative;
+    z-index: 1;
+    background: rgba(19, 26, 32, 0.80);
+    border-radius: 45px;
+    padding: 58px 90px 64px;
+    width: 100%;
+    max-width: 993px;
+    box-sizing: border-box;
+}
+
+.register-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 74px;
+    width: 100%;
+}
+
+.register-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+}
+
+.register-title {
+    font-family: 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+    font-size: 32px;
+    font-weight: 400;
+    line-height: 108.5%;
+    letter-spacing: 0.16px;
+    color: #C2CED6;
+    margin: 0;
+}
+
+.register-subtitle {
+    font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 108.5%;
+    letter-spacing: 0.12px;
+    color: rgba(194, 206, 214, 0.70);
+    margin: 0;
+}
+
+.register-form {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 33px;
+    width: 100%;
+}
+
+.register-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 41px;
+    width: 100%;
+}
+
+.field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.field-label {
+    font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 108.5%;
+    letter-spacing: 0.08px;
+    color: rgba(194, 206, 214, 0.70);
+}
+
+.field-input {
+    width: 100%;
+    height: 73px;
+    background: #0D1114;
+    border: none;
+    outline: none;
+    border-radius: 4px;
+    box-sizing: border-box;
+    color: #C2CED6;
+    font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
+    font-size: 16px;
+    padding: 0 16px;
+}
+
+.register-btn {
+    width: 100%;
+    height: 65px;
+    background: #0D8760;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    font-family: 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 108.5%;
+    letter-spacing: 0.12px;
+    color: #E5F1F9;
+    transition: opacity 0.2s ease;
+}
+
+.register-btn:hover {
+    opacity: 0.9;
+}
+
+.login-text {
+    font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 108.5%;
+    letter-spacing: 0.08px;
+    color: rgba(194, 206, 214, 0.70);
+    margin: 0;
+}
+
+.login-link {
+    font-weight: 500;
+    color: #0D8760;
+    text-decoration: none;
+}
+
+.login-link:hover {
+    text-decoration: underline;
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+    .register-card {
+        padding: 48px 60px 54px;
+        border-radius: 36px;
+    }
+
+    .register-inner {
+        gap: 56px;
+    }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+    .register-page {
+        padding: 24px 16px;
+        align-items: flex-start;
+        padding-top: 60px;
+    }
+
+    .register-card {
+        padding: 36px 24px 44px;
+        border-radius: 24px;
+    }
+
+    .register-inner {
+        gap: 40px;
+    }
+
+    .register-title {
+        font-size: 26px;
+    }
+
+    .register-subtitle {
+        font-size: 18px;
+    }
+
+    .register-fields {
+        gap: 28px;
+    }
+
+    .register-form {
+        gap: 24px;
+    }
+
+    .field-input {
+        height: 56px;
+    }
+
+    .register-btn {
+        height: 54px;
+        font-size: 20px;
+    }
+}
