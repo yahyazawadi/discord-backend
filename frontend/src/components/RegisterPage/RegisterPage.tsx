@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [sentOtp, setSentOtp] = useState('');
 
   useEffect(() => {
     if (cardRef.current) {
@@ -55,6 +56,9 @@ export default function RegisterPage() {
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        if (data.otp) {
+          setSentOtp(data.otp);
+        }
         setMessage(data.message || 'OTP sent to email. Please verify.');
         setStep(2);
       } else {
@@ -121,6 +125,9 @@ export default function RegisterPage() {
       });
       const data = await response.json();
       if (response.ok && data.success) {
+        if (data.otp) {
+          setSentOtp(data.otp);
+        }
         setMessage(data.message || 'New OTP sent successfully.');
       } else {
         setError(data.error || 'Failed to resend OTP.');
@@ -220,8 +227,13 @@ export default function RegisterPage() {
             <>
               <div className="register-header">
                 <h1 className="register-title" style={{ color: '#23a55a' }}>Verify your email</h1>
-                <p className="register-subtitle" style={{ fontSize: '16px', marginTop: '10px' }}>
+                <p className="register-subtitle" style={{ fontSize: '15px', marginTop: '10px', color: 'rgba(194, 206, 214, 0.70)' }}>
                   We sent a 6-digit code to <strong>{email}</strong>
+                  {sentOtp && (
+                    <span style={{ display: 'block', marginTop: '8px', color: '#14AC7B', fontWeight: '500' }}>
+                      Verification Code: <strong style={{ color: '#ffffff', letterSpacing: '1px', fontSize: '16px' }}>{sentOtp}</strong>
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -245,7 +257,7 @@ export default function RegisterPage() {
                       type="text"
                       className="field-input"
                       maxLength={6}
-                      placeholder="e.g. 123456"
+                      placeholder={sentOtp || "e.g. 123456"}
                       value={otp}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} // numbers only
                       required

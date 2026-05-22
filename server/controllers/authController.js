@@ -87,6 +87,7 @@ export const registerUser = async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'OTP sent to email. Please verify to complete registration.',
+      otp: otpCode,
     });
   } catch (error) {
     next(error);
@@ -207,6 +208,7 @@ export const resendOtp = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'New verification OTP sent to email.',
+      otp: otpCode,
     });
   } catch (error) {
     next(error);

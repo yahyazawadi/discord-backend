@@ -76,7 +76,7 @@ export default function LoginPage() {
 
           <div className="login-header">
             <h1 className="login-title">Welcome back</h1>
-            <p className="login-subtitle">We're so excited to see you again!</p>
+            <p className="login-subtitle">We're so excited to see you agian!</p>
           </div>
 
           <form className="login-form" onSubmit={handleLoginSubmit}>
@@ -88,7 +88,7 @@ export default function LoginPage() {
 
             <div className="login-fields">
               <div className="field-group">
-                <label className="field-label" htmlFor="email">EMAIL OR USERNAME</label>
+                <label className="field-label" htmlFor="email">EMAIL OR PHONE NUMBER</label>
                 <input
                   id="email"
                   type="text"
@@ -101,7 +101,7 @@ export default function LoginPage() {
               </div>
 
               <div className="field-group">
-                <label className="field-label" htmlFor="password">PASSWORD</label>
+                <label className="field-label" htmlFor="password">Password</label>
                 <input
                   id="password"
                   type="password"
@@ -117,7 +117,7 @@ export default function LoginPage() {
             <a href="#" onClick={(e) => e.preventDefault()} className="forgot-link">Forgot your password?</a>
 
             <button type="submit" className="login-btn" disabled={loading}>
-              {loading ? 'Logging in...' : 'Log In'}
+              {loading ? 'Logging in...' : 'Log in'}
             </button>
 
             <p className="register-text">

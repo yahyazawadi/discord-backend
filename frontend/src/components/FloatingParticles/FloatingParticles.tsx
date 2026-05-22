@@ -68,6 +68,8 @@ export default function FloatingParticles() {
       size: number;
       alpha: number;
       baseAlpha: number;
+      flickerPhase: number;
+      flickerSpeed: number;
     }
 
     let particles: Particle[] = [];
@@ -78,7 +80,8 @@ export default function FloatingParticles() {
       for (let i = 0; i < maxParticles; i++) {
         const x = Math.random() * width;
         const y = Math.random() * height;
-        const alpha = 0.15 + Math.random() * 0.3;
+        // Reduced baseline opacity: 0.04 to 0.12 (much more subtle)
+        const alpha = 0.04 + Math.random() * 0.08;
         particles.push({
           x,
           y,
@@ -91,6 +94,8 @@ export default function FloatingParticles() {
           size: 1.2 + Math.random() * 1.8,
           alpha,
           baseAlpha: alpha,
+          flickerPhase: Math.random() * Math.PI * 2,
+          flickerSpeed: 0.01 + Math.random() * 0.02, // slow, organic flicker speed
         });
       }
     };
@@ -154,13 +159,18 @@ export default function FloatingParticles() {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const attractionRadius = 280;
 
+        // Smooth sine-wave flickering calculation
+        p.flickerPhase += p.flickerSpeed;
+        const flickerOffset = Math.sin(p.flickerPhase) * 0.025;
+        const currentBaseAlpha = Math.max(0.01, p.baseAlpha + flickerOffset);
+
         if (mouseRef.current.isActive && dist < attractionRadius) {
           const force = (attractionRadius - dist) / attractionRadius;
           p.vx += (dx / dist) * force * 0.65;
           p.vy += (dy / dist) * force * 0.65;
-          p.alpha = Math.min(p.alpha + 0.04, 0.7);
+          p.alpha = Math.min(p.alpha + 0.04, 0.45); // Keep magnetic drag slightly subtler
         } else {
-          p.alpha += (p.baseAlpha - p.alpha) * 0.04;
+          p.alpha += (currentBaseAlpha - p.alpha) * 0.04;
         }
 
         // Return-to-home elastic spring force
