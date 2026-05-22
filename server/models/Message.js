@@ -89,7 +89,12 @@ const messageSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  reactions: [reactionSchema]
+  reactions: [reactionSchema],
+  parentMessage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message',
+    default: null
+  }
 }, {
   timestamps: true
 });

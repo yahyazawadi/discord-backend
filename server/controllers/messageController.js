@@ -59,10 +59,15 @@ const formatReactions = (reactions, userId, isServerAdminOrOwner) => {
  * Format message to enforce anonymous stripping of the sender and reactors.
  */
 const formatMessage = (msg, userId, isServerAdminOrOwner) => {
+  if (!msg) return msg;
   const msgObj = msg.toObject ? msg.toObject() : msg;
   
   if (msgObj.reactions) {
     msgObj.reactions = formatReactions(msgObj.reactions, userId, isServerAdminOrOwner);
+  }
+
+  if (msgObj.parentMessage) {
+    msgObj.parentMessage = formatMessage(msgObj.parentMessage, userId, isServerAdminOrOwner);
   }
   
   if (msgObj.isSystem || !msgObj.isAnonymous) {
@@ -158,7 +163,11 @@ export const getChannelMessages = async (req, res) => {
     const messages = await Message.find({ channel: channelId })
       .sort({ createdAt: 1 })
       .limit(100)
-      .populate('sender', '_id username displayName avatar');
+      .populate('sender', '_id username displayName avatar')
+      .populate({
+        path: 'parentMessage',
+        populate: { path: 'sender', select: '_id username displayName avatar' }
+      });
 
     const formatted = messages.map((msg) => formatMessage(msg, req.user._id, isServerAdminOrOwner));
 
@@ -191,7 +200,11 @@ export const getConversationMessages = async (req, res) => {
     const messages = await Message.find({ conversation: conversationId })
       .sort({ createdAt: 1 })
       .limit(100)
-      .populate('sender', '_id username displayName avatar');
+      .populate('sender', '_id username displayName avatar')
+      .populate({
+        path: 'parentMessage',
+        populate: { path: 'sender', select: '_id username displayName avatar' }
+      });
 
     // No server-level admins for DMs
     const formatted = messages.map((msg) => formatMessage(msg, req.user._id, false));
@@ -406,7 +419,11 @@ export const searchMessages = async (req, res) => {
     )
       .sort({ score: { $meta: 'textScore' } })
       .limit(50)
-      .populate('sender', '_id username displayName avatar');
+      .populate('sender', '_id username displayName avatar')
+      .populate({
+        path: 'parentMessage',
+        populate: { path: 'sender', select: '_id username displayName avatar' }
+      });
 
     const formatted = results.map((msg) => formatMessage(msg, req.user._id, isServerAdminOrOwner));
 
@@ -438,23 +455,32 @@ export const getUserConversations = async (req, res) => {
  */
 export const getOrCreateConversation = async (req, res) => {
   try {
-    const { recipientId } = req.body;
-    if (!recipientId) {
-      return res.status(400).json({ success: false, error: 'recipientId is required' });
+    const { recipientId, username } = req.body;
+    if (!recipientId && !username) {
+      return res.status(400).json({ success: false, error: 'recipientId or username is required' });
     }
 
-    if (recipientId === req.user._id.toString()) {
+    let targetUserId = recipientId;
+    if (!targetUserId && username) {
+      const user = await User.findOne({ username: { $regex: new RegExp(`^${username.trim()}$`, 'i') } });
+      if (!user) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+      targetUserId = user._id.toString();
+    }
+
+    if (targetUserId.toString() === req.user._id.toString()) {
       return res.status(400).json({ success: false, error: 'You cannot start a conversation with yourself' });
     }
 
     // Check if conversation already exists between these two users
     let conversation = await Conversation.findOne({
-      participants: { $all: [req.user._id, recipientId] }
+      participants: { $all: [req.user._id, targetUserId] }
     });
 
     if (!conversation) {
       conversation = new Conversation({
-        participants: [req.user._id, recipientId]
+        participants: [req.user._id, targetUserId]
       });
       await conversation.save();
     }

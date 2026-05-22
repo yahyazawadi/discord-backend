@@ -23,10 +23,15 @@ const formatReactions = (reactions, userId, isServerAdminOrOwner) => {
 };
 
 export const formatMessage = (msg, userId, isServerAdminOrOwner) => {
+  if (!msg) return msg;
   const msgObj = msg.toObject ? msg.toObject() : msg;
   
   if (msgObj.reactions) {
     msgObj.reactions = formatReactions(msgObj.reactions, userId, isServerAdminOrOwner);
+  }
+
+  if (msgObj.parentMessage) {
+    msgObj.parentMessage = formatMessage(msgObj.parentMessage, userId, isServerAdminOrOwner);
   }
   
   if (msgObj.isSystem || !msgObj.isAnonymous) {
