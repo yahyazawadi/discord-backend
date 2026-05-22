@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import LoginPage from './components/LoginPage/LoginPage';
 import RegisterPage from './components/RegisterPage/RegisterPage';
+import Preloader from './components/Preloader/Preloader';
 
 export default function App() {
   const [route, setRoute] = useState(window.location.pathname);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -22,9 +24,10 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
-  if (route === '/register') {
-    return <RegisterPage />;
-  }
-
-  return <LoginPage />;
+  return (
+    <>
+      {loading && <Preloader onComplete={() => setLoading(false)} />}
+      {!loading && (route === '/register' ? <RegisterPage /> : <LoginPage />)}
+    </>
+  );
 }

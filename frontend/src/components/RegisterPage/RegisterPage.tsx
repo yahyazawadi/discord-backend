@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import gsap from 'gsap';
 import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './RegisterPage.css';
 
 export default function RegisterPage() {
+  const cardRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -12,6 +14,15 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (cardRef.current) {
+      gsap.fromTo(cardRef.current,
+        { opacity: 0, y: 30, scale: 0.96 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: 'power3.out', delay: 0.1 }
+      );
+    }
+  }, []);
 
   const API_BASE = window.location.port === '5173' || window.location.port === '3000'
     ? `http://${window.location.hostname}:5000/api/auth`
@@ -124,9 +135,9 @@ export default function RegisterPage() {
   return (
     <div className="register-page">
       <div className="register-bg-overlay" />
-      {/* <FloatingParticles /> */}
+      <FloatingParticles />
 
-      <div className="register-card">
+      <div className="register-card" ref={cardRef}>
         <div className="register-inner">
           {step === 1 ? (
             <>

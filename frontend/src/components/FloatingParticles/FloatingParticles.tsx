@@ -1,200 +1,215 @@
-// import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import gsap from 'gsap';
+import { colors } from '../../utils/colors';
 
-// export default function FloatingParticles() {
-//   const canvasRef = useRef<HTMLCanvasElement>(null);
-//   const mouseRef = useRef({ x: -1000, y: -1000 });
-//   const lastMoveTimeRef = useRef(Date.now());
+export default function FloatingParticles() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mouseRef = useRef({ x: -1000, y: -1000, isActive: false });
 
-//   useEffect(() => {
-//     const canvas = canvasRef.current;
-//     if (!canvas) return;
-//     const ctx = canvas.getContext('2d');
-//     if (!ctx) return;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-//     let animationId: number;
-//     let width = (canvas.width = window.innerWidth);
-//     let height = (canvas.height = window.innerHeight);
+    // Entrance animation using GSAP
+    gsap.fromTo(
+      canvas,
+      { opacity: 0 },
+      { opacity: 1, duration: 1.5, ease: 'power2.out' }
+    );
 
-//     const handleResize = () => {
-//       if (!canvas) return;
-//       width = canvas.width = window.innerWidth;
-//       height = canvas.height = window.innerHeight;
-//     };
+    let animationId: number;
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
 
-//     const handleMouseMove = (e: MouseEvent) => {
-//       mouseRef.current.x = e.clientX;
-//       mouseRef.current.y = e.clientY;
-//       lastMoveTimeRef.current = Date.now();
-//     };
+    const handleResize = () => {
+      if (!canvas) return;
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      initParticles();
+    };
 
-//     const handleMouseLeave = () => {
-//       mouseRef.current.x = -1000;
-//       mouseRef.current.y = -1000;
-//     };
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseRef.current.x = e.clientX;
+      mouseRef.current.y = e.clientY;
+      mouseRef.current.isActive = true;
+    };
 
-//     window.addEventListener('resize', handleResize);
-//     window.addEventListener('mousemove', handleMouseMove);
-//     window.addEventListener('mouseleave', handleMouseLeave);
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        mouseRef.current.x = e.touches[0].clientX;
+        mouseRef.current.y = e.touches[0].clientY;
+        mouseRef.current.isActive = true;
+      }
+    };
 
-//     // Free-flowing velocity-based particle model
-//     interface Particle {
-//       x: number;
-//       y: number;
-//       vx: number;            // Velocity X
-//       vy: number;            // Velocity Y
-//       size: number;          // stroke thickness
-//       alpha: number;         // opacity
-//       length: number;        // line length
-//     }
+    const handleMouseLeave = () => {
+      mouseRef.current.x = -1000;
+      mouseRef.current.y = -1000;
+      mouseRef.current.isActive = false;
+    };
 
-//     const particles: Particle[] = [];
-//     const maxParticles = 380; // Dense starry field
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleMouseLeave);
 
-//     const centerX = () => width / 2;
-//     const centerY = () => height / 2;
+    interface Particle {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      homeX: number;
+      homeY: number;
+      angle: number;
+      speed: number;
+      size: number;
+      alpha: number;
+      baseAlpha: number;
+    }
 
-//     const createParticle = (initRandom = false): Particle => {
-//       const maxRadius = Math.max(width, height) * 0.7;
-//       const startDist = initRandom ? Math.random() * maxRadius : Math.random() * 30;
-//       const angle = Math.random() * Math.PI * 2;
+    let particles: Particle[] = [];
+    const maxParticles = 90; // Lightweight particle count for clean presentation
 
-//       // Cartesian spawn point
-//       const x = centerX() + Math.cos(angle) * startDist;
-//       const y = centerY() + Math.sin(angle) * startDist;
+    const initParticles = () => {
+      particles = [];
+      for (let i = 0; i < maxParticles; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const alpha = 0.15 + Math.random() * 0.3;
+        particles.push({
+          x,
+          y,
+          vx: 0,
+          vy: 0,
+          homeX: x,
+          homeY: y,
+          angle: Math.random() * Math.PI * 2,
+          speed: 0.15 + Math.random() * 0.3,
+          size: 1.2 + Math.random() * 1.8,
+          alpha,
+          baseAlpha: alpha,
+        });
+      }
+    };
 
-//       // Initial vector combining radial expansion and circular orbit velocity
-//       const speed = 0.3 + Math.random() * 0.7;
-//       const angularSpeed = 0.0006 + Math.random() * 0.0016;
+    initParticles();
 
-//       const radVelX = speed * Math.cos(angle);
-//       const radVelY = speed * Math.sin(angle);
-//       const orbitVelX = -angularSpeed * startDist * Math.sin(angle);
-//       const orbitVelY = angularSpeed * startDist * Math.cos(angle);
+    // Hex to RGB parser for primary color
+    const primaryHex = colors.primary;
+    let r = 13, g = 135, b = 96;
+    if (primaryHex && primaryHex.startsWith('#')) {
+      const hex = primaryHex.slice(1);
+      if (hex.length === 6) {
+        r = parseInt(hex.slice(0, 2), 16);
+        g = parseInt(hex.slice(2, 4), 16);
+        b = parseInt(hex.slice(4, 6), 16);
+      }
+    }
 
-//       return {
-//         x,
-//         y,
-//         vx: radVelX + orbitVelX,
-//         vy: radVelY + orbitVelY,
-//         size: 1.8 + Math.random() * 2.2,
-//         alpha: initRandom ? 0.45 + Math.random() * 0.45 : 0.3,
-//         length: 2 + Math.random() * 5,
-//       };
-//     };
+    const animate = () => {
+      // Clear canvas with a solid background representing dark mode (#0D1114)
+      ctx.fillStyle = '#0D1114';
+      ctx.fillRect(0, 0, width, height);
 
-//     // Initialize particles
-//     for (let i = 0; i < maxParticles; i++) {
-//       particles.push(createParticle(true));
-//     }
+      // 1. Draw subtle connection lines between close particles
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const p1 = particles[i];
+          const p2 = particles[j];
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
 
-//     const animate = () => {
-//       const timeSinceLastMove = Date.now() - lastMoveTimeRef.current;
-      
-//       // Fades trails when mouse stops moving for 3 seconds
-//       let clearOpacity = 0.22;
-//       if (timeSinceLastMove > 3000) {
-//         const fadeProgress = Math.min((timeSinceLastMove - 3000) / 1000, 1);
-//         clearOpacity = 0.22 + fadeProgress * 0.58; 
-//       }
+          if (dist < 75) {
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            const lineAlpha = (1 - dist / 75) * 0.05 * Math.min(p1.alpha, p2.alpha);
+            ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${lineAlpha})`;
+            ctx.lineWidth = 0.55;
+            ctx.stroke();
+          }
+        }
+      }
 
-//       ctx.fillStyle = `rgba(13, 17, 20, ${clearOpacity})`;
-//       ctx.fillRect(0, 0, width, height);
+      // 2. Update and draw each particle
+      particles.forEach((p) => {
+        // Slow float drift of home coordinates to keep background alive
+        p.angle += 0.003;
+        p.homeX += Math.cos(p.angle) * p.speed;
+        p.homeY += Math.sin(p.angle) * p.speed;
 
-//       particles.forEach((p, index) => {
-//         // Continuous proximity checks to the current mouse position (regardless of mouse movement state)
-//         const dx = p.x - mouseRef.current.x;
-//         const dy = p.y - mouseRef.current.y;
-//         const distance = Math.sqrt(dx * dx + dy * dy);
-//         const repulsionRadius = 130;
+        // Wrap home positions if they drift completely off-screen
+        if (p.homeX < -20) p.homeX = width + 20;
+        if (p.homeX > width + 20) p.homeX = -20;
+        if (p.homeY < -20) p.homeY = height + 20;
+        if (p.homeY > height + 20) p.homeY = -20;
 
-//         if (distance < repulsionRadius) {
-//           // Repulsion force that pushes them permanently off their trajectory
-//           const force = (repulsionRadius - distance) / repulsionRadius;
-//           const angle = Math.atan2(dy, dx);
-          
-//           // Alter the physical velocity vectors!
-//           const pushStrength = 0.7;
-//           p.vx += Math.cos(angle) * force * pushStrength;
-//           p.vy += Math.sin(angle) * force * pushStrength;
+        // Calculate interaction with pointer
+        const dx = mouseRef.current.x - p.x;
+        const dy = mouseRef.current.y - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const attractionRadius = 280;
 
-//           // Limit speed to prevent chaotic teleportation off screen
-//           const currentSpeed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-//           const maxSpeed = 5.0;
-//           if (currentSpeed > maxSpeed) {
-//             p.vx = (p.vx / currentSpeed) * maxSpeed;
-//             p.vy = (p.vy / currentSpeed) * maxSpeed;
-//           }
+        if (mouseRef.current.isActive && dist < attractionRadius) {
+          const force = (attractionRadius - dist) / attractionRadius;
+          p.vx += (dx / dist) * force * 0.65;
+          p.vy += (dy / dist) * force * 0.65;
+          p.alpha = Math.min(p.alpha + 0.04, 0.7);
+        } else {
+          p.alpha += (p.baseAlpha - p.alpha) * 0.04;
+        }
 
-//           p.alpha = Math.min(p.alpha + 0.15, 1.0); // Make them fully radiant when actively pushed
-//         }
+        // Return-to-home elastic spring force
+        const homeDx = p.homeX - p.x;
+        const homeDy = p.homeY - p.y;
+        p.vx += homeDx * 0.02;
+        p.vy += homeDy * 0.02;
 
-//         // Apply physical movements
-//         p.x += p.vx;
-//         p.y += p.vy;
+        // Apply friction/damping
+        p.vx *= 0.88;
+        p.vy *= 0.88;
 
-//         if (p.alpha < 0.85) {
-//           p.alpha += 0.015;
-//         }
+        p.x += p.vx;
+        p.y += p.vy;
 
-//         // Check if out of bounds relative to center
-//         const distFromCenter = Math.sqrt(Math.pow(p.x - centerX(), 2) + Math.pow(p.y - centerY(), 2));
-//         const maxRadius = Math.max(width, height) * 0.65;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.alpha})`;
+        ctx.fill();
+      });
 
-//         if (distFromCenter > maxRadius) {
-//           p.alpha -= 0.03;
-//         }
+      animationId = requestAnimationFrame(animate);
+    };
 
-//         // Reset if out of bounds or dead
-//         if (distFromCenter > maxRadius || p.alpha <= 0) {
-//           particles[index] = createParticle(false);
-//           return;
-//         }
+    animate();
 
-//         // Draw particle line pointing dynamically along its exact velocity vector direction
-//         ctx.beginPath();
-//         const velocityMagnitude = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-//         const dirX = velocityMagnitude > 0 ? p.vx / velocityMagnitude : 1;
-//         const dirY = velocityMagnitude > 0 ? p.vy / velocityMagnitude : 0;
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseleave', handleMouseLeave);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseLeave);
+      cancelAnimationFrame(animationId);
+    };
+  }, []);
 
-//         ctx.moveTo(p.x, p.y);
-//         ctx.lineTo(
-//           p.x + dirX * p.length,
-//           p.y + dirY * p.length
-//         );
-
-//         // Highly luminous electric emerald green (#2EE59D) for high-impact brightness
-//         ctx.strokeStyle = `rgba(46, 229, 157, ${p.alpha})`; 
-//         ctx.lineWidth = p.size;
-//         ctx.lineCap = 'round';
-//         ctx.stroke();
-//       });
-
-//       animationId = requestAnimationFrame(animate);
-//     };
-
-//     animate();
-
-//     return () => {
-//       window.removeEventListener('resize', handleResize);
-//       window.removeEventListener('mousemove', handleMouseMove);
-//       window.removeEventListener('mouseleave', handleMouseLeave);
-//       cancelAnimationFrame(animationId);
-//     };
-//   }, []);
-
-//   return (
-//     <canvas
-//       ref={canvasRef}
-//       style={{
-//         position: 'absolute',
-//         top: 0,
-//         left: 0,
-//         width: '100%',
-//         height: '100%',
-//         zIndex: 0,
-//         pointerEvents: 'none',
-//         display: 'block',
-//       }}
-//     />
-//   );
-// }
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: 0,
+        pointerEvents: 'none',
+        display: 'block',
+      }}
+    />
+  );
+}
