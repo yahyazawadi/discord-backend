@@ -39,6 +39,7 @@ export default function RegisterPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, username, password, birthdate }),
+        credentials: 'include',
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -70,6 +71,7 @@ export default function RegisterPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, otp }),
+        credentials: 'include',
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -78,7 +80,7 @@ export default function RegisterPage() {
           localStorage.setItem('token', data.token);
         }
         localStorage.setItem('user', JSON.stringify(data.user));
-        
+
         setTimeout(() => {
           window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
         }, 1500);
@@ -136,7 +138,7 @@ export default function RegisterPage() {
                     ⚠️ {error}
                   </div>
                 )}
-                
+
                 <div className="register-fields">
                   <div className="field-group">
                     <label className="field-label" htmlFor="email">EMAIL</label>

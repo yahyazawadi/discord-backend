@@ -33,6 +33,7 @@ export default function LoginPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
+        credentials: 'include',
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -40,7 +41,7 @@ export default function LoginPage() {
           localStorage.setItem('token', data.token);
         }
         localStorage.setItem('user', JSON.stringify(data.user));
-        
+
         // Redirect to main voice/text application on successful login
         window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
       } else {
