@@ -54,7 +54,7 @@ Welcome to the Discord Clone system. This is a lightweight, high-performance, si
 * **Unread Counters Read Receipts**: Custom tracking of `lastReadAt` timestamps per channel to display dynamic red badge counters.
 
 ### 🎙️ 7. WebRTC Voice & Video Channels (PeerJS Core)
-* **Express-Hosted WebRTC Broker**: Embeds PeerJS server directly into the Express pipeline on port `5000`, bypassing complex multi-port firewall issues.
+* **Express-Hosted WebRTC Broker**: Embeds PeerJS server directly into the Express pipeline on port `5001`, bypassing complex multi-port firewall issues.
 * **Anti-Ghosting Session safeguards**: Automatic PeerJS disconnect hook cleanup to prevent ghost users from lingering in voice channels on network loss.
 * **Multi-Tab ID Conflict Auto-Recovery**: Detects duplicate browser tabs, appending dynamic timestamp suffixes to ensure secondary sessions connect successfully.
 * **Aspect Ratio Containment**: Clean CSS constraints to prevent code-sharing distortion on wide, ultra-wide, or mobile viewports.
