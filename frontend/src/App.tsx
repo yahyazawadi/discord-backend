@@ -9,12 +9,18 @@ export default function App() {
     const handleLocationChange = () => {
       setRoute(window.location.pathname);
     };
-    
+
     // Listen for history push/pop
     window.addEventListener('popstate', handleLocationChange);
+
+    // Auto-redirect from root to /login
+    if (window.location.pathname === '/' || window.location.pathname === '') {
+      window.history.replaceState({}, '', '/login');
+      setRoute('/login');
+    }
+
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
-
 
   if (route === '/register') {
     return <RegisterPage />;

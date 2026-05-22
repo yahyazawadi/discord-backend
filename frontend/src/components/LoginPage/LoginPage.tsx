@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -33,6 +34,7 @@ export default function LoginPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
+        credentials: 'include',
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -40,7 +42,7 @@ export default function LoginPage() {
           localStorage.setItem('token', data.token);
         }
         localStorage.setItem('user', JSON.stringify(data.user));
-        
+
         // Redirect to main voice/text application on successful login
         window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
       } else {
@@ -56,6 +58,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-bg-overlay" />
+      {/* <FloatingParticles /> */}
 
       <div className="login-card">
         <div className="login-inner">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './RegisterPage.css';
 
 export default function RegisterPage() {
@@ -39,6 +40,7 @@ export default function RegisterPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, username, password, birthdate }),
+        credentials: 'include',
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -70,6 +72,7 @@ export default function RegisterPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, otp }),
+        credentials: 'include',
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -78,7 +81,7 @@ export default function RegisterPage() {
           localStorage.setItem('token', data.token);
         }
         localStorage.setItem('user', JSON.stringify(data.user));
-        
+
         setTimeout(() => {
           window.location.href = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/';
         }, 1500);
@@ -121,6 +124,7 @@ export default function RegisterPage() {
   return (
     <div className="register-page">
       <div className="register-bg-overlay" />
+      {/* <FloatingParticles /> */}
 
       <div className="register-card">
         <div className="register-inner">
@@ -136,7 +140,7 @@ export default function RegisterPage() {
                     ⚠️ {error}
                   </div>
                 )}
-                
+
                 <div className="register-fields">
                   <div className="field-group">
                     <label className="field-label" htmlFor="email">EMAIL</label>
@@ -197,7 +201,7 @@ export default function RegisterPage() {
 
                 <p className="login-text" style={{ marginTop: '12px' }}>
                   Already have an account?{' '}
-                  <a href="/" onClick={(e) => handleNavigate(e, '/')} className="login-link">Log in</a>
+                  <a href="/login" onClick={(e) => handleNavigate(e, '/login')} className="login-link">Log in</a>
                 </p>
               </form>
             </>

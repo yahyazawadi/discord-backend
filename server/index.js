@@ -21,6 +21,7 @@ import Message from './models/Message.js';
 import inviteTrie from './utils/inviteTrie.js';
 import jwt from 'jsonwebtoken';
 import { broadcastMessageToRoom, broadcastMessageUpdateToRoom } from './utils/socketHelpers.js';
+import { join } from 'path';
 
 const result = dotenv.config();
 console.log('Dotenv config result:', result);
@@ -144,6 +145,11 @@ app.use(cors({
 
 // Serve static files from public directory
 app.use(express.static('public'));
+
+// Catch-all for SPA (Client-side routing)
+app.get('*', (req, res) => {
+  res.sendFile(join(process.cwd(), 'public', 'index.html'));
+});
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev')); // Logging
@@ -294,7 +300,7 @@ io.on('connection', async (socket) => {
   });
 
   // Messaging event
-  socket.on('send_message', async ({ channelId, conversationId, content, attachments, isAnonymous }) => {
+  socket.on('send_message', async ({ channelId, conversationId, content, attachments, isAnonymous, parentMessageId }) => {
     try {
       if (!content && (!attachments || attachments.length === 0)) {
         return socket.emit('error', { message: 'Message content or attachments required' });
@@ -373,11 +379,15 @@ io.on('connection', async (socket) => {
         content: content ? content.trim() : '',
         attachments: attachments || [],
         isAnonymous: !!isAnonymous,
-        anonymousSenderName: anonymousSenderName || undefined
+        anonymousSenderName: anonymousSenderName || undefined,
+        parentMessage: parentMessageId || undefined
       });
 
       await newMessage.save();
-      await newMessage.populate('sender', '_id username displayName avatar');
+      await newMessage.populate([
+        { path: 'sender', select: '_id username displayName avatar' },
+        { path: 'parentMessage', populate: { path: 'sender', select: '_id username displayName avatar' } }
+      ]);
 
       // Broadcast via target room using targeted formatting
       const room = channelId ? `channel_${channelId}` : `conversation_${conversationId}`;
