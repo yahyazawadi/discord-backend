@@ -115,6 +115,40 @@ const isGifUrl = (text: string) => {
          (t.includes('giphy.com/') || t.endsWith('.gif') || t.includes('.giphy.com/media/'));
 };
 
+const compressImageToWebP = (file: File, maxWidth = 1200): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.min(img.width, maxWidth);
+      canvas.height = (canvas.width / img.width) * img.height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Failed to get canvas 2D context"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("Canvas conversion to Blob failed"));
+          return;
+        }
+        const compressedFile = new File([blob], `img-${Date.now()}.webp`, {
+          type: "image/webp"
+        });
+        resolve(compressedFile);
+      }, "image/webp", 0.8);
+    };
+
+    img.onerror = (err) => reject(err);
+  });
+};
+
+
 export default function ChatArea({ conversationId, channelId, recipientName, recipientAvatar, initialCallType, onClearInitialCallType, isVoice }: ChatAreaProps) {
   // activeCallChannelId drives the hook — it's set independently so the hook
   // gets the real channelId on the *next* render after we decide to call.
@@ -235,6 +269,13 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   // Message Reply & Emoji states
   const [replyingToMessage, setReplyingToMessage] = useState<any | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+
+  // File upload states
+  const [selectedAttachments, setSelectedAttachments] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadProgressText, setUploadProgressText] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddEmoji = (emoji: string) => {
     setInputValue((prev) => prev + emoji);
@@ -389,16 +430,80 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typingUsers]);
 
+  // File select and upload handlers
+  const handlePlusClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset input value so same file can be uploaded again
+    e.target.value = '';
+
+    setUploading(true);
+    setUploadError('');
+    setUploadProgressText('Compressing media...');
+
+    try {
+      let uploadFile = file;
+      if (file.type.startsWith('image/')) {
+        uploadFile = await compressImageToWebP(file, 1200);
+      }
+
+      setUploadProgressText('Uploading to Cloudflare R2...');
+
+      const res = await api.post('/messages/upload-url', {
+        fileName: uploadFile.name,
+        fileType: uploadFile.type
+      });
+
+      const data = res.data;
+      if (!data.signedUrl) {
+        throw new Error(data.error || 'Failed to get upload URL');
+      }
+
+      const uploadRes = await fetch(data.signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': uploadFile.type
+        },
+        body: uploadFile
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('Upload to Cloudflare R2 failed');
+      }
+
+      // Add to attachments draft
+      const newAttachment = {
+        url: data.publicUrl,
+        fileType: file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : 'file'),
+        fileName: file.name,
+        fileSize: file.size
+      };
+
+      setSelectedAttachments((prev) => [...prev, newAttachment]);
+    } catch (err: any) {
+      console.error('File upload failed:', err);
+      setUploadError(err.message || 'File upload failed');
+    } finally {
+      setUploading(false);
+      setUploadProgressText('');
+    }
+  };
+
   // Send message trigger
   const handleSendMessage = () => {
-    if (!inputValue.trim() || (!conversationId && !channelId)) return;
+    if ((!inputValue.trim() && selectedAttachments.length === 0) || (!conversationId && !channelId)) return;
 
     const socket = getSocket();
     socket.emit('send_message', {
       conversationId: conversationId || null,
       channelId: channelId || null,
       content: inputValue.trim(),
-      attachments: [],
+      attachments: selectedAttachments,
       isAnonymous: false,
       parentMessageId: replyingToMessage?._id || null
     });
@@ -411,6 +516,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     });
     
     setInputValue('');
+    setSelectedAttachments([]);
     setReplyingToMessage(null);
   };
 
@@ -911,6 +1017,50 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
                       </p>
                     )}
 
+                    {/* Render Attachments */}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                        {msg.attachments.map((att: any, attIdx: number) => {
+                          if (att.fileType === 'image') {
+                            return (
+                              <div key={attIdx} style={{ borderRadius: '12px', overflow: 'hidden', maxWidth: '400px', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                <img 
+                                  src={att.url} 
+                                  alt={att.fileName || 'Attachment'} 
+                                  style={{ width: '100%', maxHeight: '350px', objectFit: 'contain', display: 'block', cursor: 'pointer' }}
+                                  onClick={() => window.open(att.url, '_blank')}
+                                />
+                              </div>
+                            );
+                          } else if (att.fileType === 'video') {
+                            return (
+                              <div key={attIdx} style={{ borderRadius: '12px', overflow: 'hidden', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                <video 
+                                  src={att.url} 
+                                  controls 
+                                  style={{ width: '100%', maxHeight: '360px', display: 'block' }} 
+                                />
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <div key={attIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#0D1114', padding: '12px', borderRadius: '8px', maxWidth: '320px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                <span style={{ fontSize: '24px' }}>📄</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                  <a href={att.url} target="_blank" rel="noopener noreferrer" style={{ color: '#14AC7B', textDecoration: 'none', fontWeight: 'bold', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {att.fileName || 'Download File'}
+                                  </a>
+                                  <span style={{ fontSize: '11px', color: '#8E9297' }}>
+                                    {att.fileSize ? `${(att.fileSize / 1024 / 1024).toFixed(2)} MB` : 'Unknown size'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          }
+                        })}
+                      </div>
+                    )}
+
                     {/* Heart Reactions Badge Array */}
                     {msg.reactions && msg.reactions.length > 0 && (
                       <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
@@ -1086,6 +1236,128 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
         </div>
       )}
 
+      {/* CSS Animation for upload spinner */}
+      <style>{`
+        @keyframes upload-spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      {/* Uploading progress and error notifications */}
+      {(uploading || uploadError) && (
+        <div style={{
+          padding: '8px 16px',
+          margin: '0 20px 8px 20px',
+          borderRadius: '8px',
+          fontSize: '13px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: uploadError ? 'rgba(237, 66, 69, 0.1)' : 'rgba(20, 172, 123, 0.1)',
+          border: uploadError ? '1px solid #ED4245' : '1px solid #14AC7B',
+          color: uploadError ? '#ED4245' : '#14AC7B',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {!uploadError && <span style={{
+              display: 'inline-block',
+              width: '14px',
+              height: '14px',
+              border: '2px solid transparent',
+              borderTopColor: '#14AC7B',
+              borderRadius: '50%',
+              animation: 'upload-spin 0.8s linear infinite'
+            }} />}
+            <span>{uploadError || uploadProgressText}</span>
+          </div>
+          {uploadError && (
+            <button 
+              onClick={() => setUploadError('')}
+              style={{ background: 'none', border: 'none', color: '#ED4245', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Selected/uploaded attachments preview list */}
+      {selectedAttachments.length > 0 && (
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          flexWrap: 'wrap',
+          padding: '12px',
+          background: '#090D0F',
+          borderRadius: '8px',
+          margin: '0 20px 8px 20px',
+          border: '1px solid rgba(255,255,255,0.05)'
+        }}>
+          {selectedAttachments.map((att, idx) => (
+            <div key={idx} style={{
+              position: 'relative',
+              width: '100px',
+              height: '100px',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              background: '#0D1114',
+              border: '1px solid rgba(255,255,255,0.1)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '4px'
+            }}>
+              {att.fileType === 'image' ? (
+                <img 
+                  src={att.url} 
+                  alt={att.fileName} 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                />
+              ) : att.fileType === 'video' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '24px' }}>🎬</span>
+                  <span style={{ fontSize: '10px', color: '#8E9297', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '90px' }}>
+                    {att.fileName}
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '24px' }}>📄</span>
+                  <span style={{ fontSize: '10px', color: '#8E9297', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '90px' }}>
+                    {att.fileName}
+                  </span>
+                </div>
+              )}
+              {/* Delete button */}
+              <button
+                onClick={() => setSelectedAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                style={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  background: 'rgba(0, 0, 0, 0.7)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '18px',
+                  height: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+
       {/* Replying banner */}
       {replyingToMessage && (
         <div style={{
@@ -1132,7 +1404,20 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
 
       {/* Message input */}
       <div className="chat-input-bar">
-        <button className="chat-input-add-btn" aria-label="Add attachment">
+        <input 
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          style={{ display: 'none' }}
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+        />
+
+        <button 
+          className="chat-input-add-btn" 
+          aria-label="Add attachment"
+          onClick={handlePlusClick}
+          disabled={uploading}
+        >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path
               d="M8 0C3.5888 0 0 3.5888 0 8.00001C0 12.4112 3.5888 16 8 16C12.4112 16 16 12.4112 16 8.00001C16 3.5888 12.4112 0 8 0ZM12 8.80001H8.8V12H7.2V8.80001H4V7.20001H7.2V4H8.8V7.20001H12V8.80001Z"
