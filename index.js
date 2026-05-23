@@ -104,10 +104,5 @@ app.get(/.*/, (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-// Listen locally
-app.listen(5001, () => {
-  console.log('REST Server running on port 5001');
-});
-
 // Export the HTTP server handler for Cloudflare Workers
-export default httpServerHandler({ port: 5001 });
+export default httpServerHandler(app);
