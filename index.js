@@ -89,6 +89,56 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
+// --- Database Connection Middleware ---
+let dbConnectionPromise = null;
+
+const ensureDbConnected = async (req, res, next) => {
+  const readyState = mongoose.connection.readyState;
+  console.log(`📡 [DB Middleware] Request: ${req.method} ${req.path} | Connection State: ${readyState}`);
+  
+  if (readyState === 1) {
+    return next();
+  }
+  
+  console.log(`🔌 [DB Middleware] Database not connected (State: ${readyState}). Awaiting/Initiating connection...`);
+  
+  if (!dbConnectionPromise) {
+    const rawUri = process.env.MONGODB_URI;
+    if (!rawUri) {
+      console.error('💥 [DB Middleware] Error: MONGODB_URI is undefined!');
+      return res.status(500).json({
+        success: false,
+        error: 'Database Configuration Error',
+        message: 'MONGODB_URI is not set in environment variables.'
+      });
+    }
+    
+    const maskedUri = rawUri.replace(/:([^@]+)@/, ':***@');
+    console.log(`🚀 [DB Middleware] Connecting to ${maskedUri}...`);
+    
+    dbConnectionPromise = mongoose.connect(rawUri, {
+      serverSelectionTimeoutMS: 8000,
+    });
+  }
+  
+  try {
+    await dbConnectionPromise;
+    console.log('✅ [DB Middleware] Connection established successfully!');
+    next();
+  } catch (error) {
+    console.error('💥 [DB Middleware] Failed to connect to MongoDB in request middleware:', error);
+    dbConnectionPromise = null; // Clear so next request retries
+    res.status(500).json({
+      success: false,
+      error: 'Database Connection Timeout/Failure',
+      message: error.message,
+      state: mongoose.connection.readyState
+    });
+  }
+};
+
+app.use('/api', ensureDbConnected);
+
 // --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
