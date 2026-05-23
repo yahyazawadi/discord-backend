@@ -44,12 +44,6 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     setMessage('');
-    setWakingUp(false);
-
-    // Setup timer to detect slow response (server wake-up)
-    const timer = setTimeout(() => {
-      setWakingUp(true);
-    }, 2500);
 
     try {
       const response = await api.post('/auth/register', { email, username, password, birthdate });
@@ -67,9 +61,7 @@ export default function RegisterPage() {
       const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Is the server running?';
       setError(errMsg);
     } finally {
-      clearTimeout(timer);
       setLoading(false);
-      setWakingUp(false);
     }
   };
 
