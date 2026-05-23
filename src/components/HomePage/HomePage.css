@@ -1092,3 +1092,30 @@
   from { transform: translateX(120%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* Category / Channel Hover Activation Controls */
+.category-add-main-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.categories-title-wrap:hover .category-add-main-btn {
+  opacity: 1;
+}
+
+.category-add-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.category-header-wrap {
+  transition: background-color 0.15s ease;
+}
+
+.category-header-wrap:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.category-header-wrap:hover .category-add-btn {
+  opacity: 1;
+}

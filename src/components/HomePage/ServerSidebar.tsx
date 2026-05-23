@@ -52,6 +52,18 @@ export default function ServerSidebar({
     return JSON.parse(localStorage.getItem('user') || '{}');
   });
 
+  // Calculate Admin and Owner permissions at the top level
+  const isOwner = server?.owner?._id 
+    ? server.owner._id.toString() === currentUser._id?.toString()
+    : server?.owner?.toString() === currentUser._id?.toString();
+
+  const isAdmin = server?.admins?.some((admin: any) => {
+    const adminId = admin._id ? admin._id.toString() : admin.toString();
+    return adminId === currentUser._id?.toString();
+  });
+
+  const isServerAdminOrOwner = isOwner || isAdmin;
+
   // Track mic and deafen states locally for representation
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
@@ -60,6 +72,15 @@ export default function ServerSidebar({
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [targetUserId, setTargetUserId] = useState('');
   const [adminStatusText, setAdminStatusText] = useState('');
+
+  // States for Category and Channel creation
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  
+  const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text');
+  const [targetCategoryIdForChannel, setTargetCategoryIdForChannel] = useState('');
 
   const token = localStorage.getItem('token');
 
@@ -100,6 +121,49 @@ export default function ServerSidebar({
       console.error('Failed to load server details:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    try {
+      const res = await api.post(`/servers/${serverId}/categories`, { name: newCategoryName.trim() });
+      if (res.data.success) {
+        setShowCreateCategoryModal(false);
+        setNewCategoryName('');
+        await fetchServerDetails();
+      } else {
+        alert(res.data.error || 'Failed to create category');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.error || 'Failed to create category');
+    }
+  };
+
+  const handleCreateChannel = async () => {
+    if (!newChannelName.trim() || !targetCategoryIdForChannel) return;
+    try {
+      const res = await api.post(`/servers/${serverId}/channels`, {
+        name: newChannelName.trim(),
+        type: newChannelType,
+        categoryId: targetCategoryIdForChannel
+      });
+      if (res.data.success) {
+        setShowCreateChannelModal(false);
+        setNewChannelName('');
+        await fetchServerDetails();
+        
+        // Auto-select the newly created channel
+        if (res.data.channel) {
+          onSelectChannel(res.data.channel._id, res.data.channel.name, res.data.channel.type);
+        }
+      } else {
+        alert(res.data.error || 'Failed to create channel');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.error || 'Failed to create channel');
     }
   };
 
@@ -252,18 +316,71 @@ export default function ServerSidebar({
 
         {/* Channels scroll area */}
         <div className="dm-scroll-area" style={{ flex: 1, padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {sortedCategories.map(cat => {
-            // Separate channels by type if name matches Text Channels / Voice Channels
-            const textChannels = cat.channels.filter(c => c.type === 'text');
-            const voiceChannels = cat.channels.filter(c => c.type === 'voice');
+          {/* Categories Title Header */}
+          <div 
+            className="categories-title-wrap"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 8px',
+              color: '#8E9297',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}
+          >
+            <span>Channels</span>
+            {isServerAdminOrOwner && (
+              <button
+                className="category-add-main-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNewCategoryName('');
+                  setShowCreateCategoryModal(true);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#8E9297',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'color 0.15s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#8E9297'}
+                title="Create Category"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </button>
+            )}
+          </div>
 
-            return (
-              <div key={cat._id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {/* Text Channels Header */}
-                {textChannels.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {sortedCategories.map(cat => {
+              return (
+                <div key={cat._id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {/* Category Header */}
+                  <div 
+                    className="category-header-wrap"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      userSelect: 'none',
+                    }}
+                  >
                     <div 
-                      onClick={() => toggleCategory(cat._id + '-text')}
+                      onClick={() => toggleCategory(cat._id)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -273,9 +390,8 @@ export default function ServerSidebar({
                         textTransform: 'uppercase',
                         color: '#8E9297',
                         cursor: 'pointer',
-                        padding: '6px 8px',
-                        userSelect: 'none',
-                        letterSpacing: '0.5px'
+                        letterSpacing: '0.5px',
+                        flex: 1
                       }}
                     >
                       <svg 
@@ -286,25 +402,61 @@ export default function ServerSidebar({
                         stroke="currentColor" 
                         strokeWidth="3"
                         style={{
-                          transform: expandedCategories[cat._id + '-text'] !== false ? 'rotate(0deg)' : 'rotate(-90deg)',
+                          transform: expandedCategories[cat._id] !== false ? 'rotate(0deg)' : 'rotate(-90deg)',
                           transition: 'transform 0.2s',
                           color: '#8E9297'
                         }}
                       >
                         <path d="M6 9l6 6 6-6" />
                       </svg>
-                      <span>Text Channels</span>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+                        {cat.name}
+                      </span>
                     </div>
+                    
+                    {isServerAdminOrOwner && (
+                      <button
+                        className="category-add-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTargetCategoryIdForChannel(cat._id);
+                          setNewChannelName('');
+                          setNewChannelType('text');
+                          setShowCreateChannelModal(true);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#8E9297',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'color 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#8E9297'}
+                        title="Create Channel"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
 
-                    {/* Text Channels List */}
-                    {expandedCategories[cat._id + '-text'] !== false && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        {textChannels.map(channel => {
+                  {/* Channels List */}
+                  {expandedCategories[cat._id] !== false && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                      {cat.channels && cat.channels.length > 0 ? (
+                        cat.channels.map(channel => {
                           const isActive = activeChannelId === channel._id;
                           return (
                             <div
                               key={channel._id}
-                              onClick={() => onSelectChannel(channel._id, channel.name, 'text')}
+                              onClick={() => onSelectChannel(channel._id, channel.name, channel.type)}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -330,107 +482,31 @@ export default function ServerSidebar({
                                 }
                               }}
                             >
-                              <span style={{ fontSize: '18px', opacity: isActive ? 1 : 0.6, fontWeight: 'bold' }}>#</span>
+                              {channel.type === 'text' ? (
+                                <span style={{ fontSize: '18px', opacity: isActive ? 1 : 0.6, fontWeight: 'bold' }}>#</span>
+                              ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isActive ? 1 : 0.6 }}>
+                                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                </svg>
+                              )}
                               <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {channel.name}
                               </span>
                             </div>
                           );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Voice Channels Header */}
-                {voiceChannels.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '12px' }}>
-                    <div 
-                      onClick={() => toggleCategory(cat._id + '-voice')}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        textTransform: 'uppercase',
-                        color: '#8E9297',
-                        cursor: 'pointer',
-                        padding: '6px 8px',
-                        userSelect: 'none',
-                        letterSpacing: '0.5px'
-                      }}
-                    >
-                      <svg 
-                        width="10" 
-                        height="10" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="3"
-                        style={{
-                          transform: expandedCategories[cat._id + '-voice'] !== false ? 'rotate(0deg)' : 'rotate(-90deg)',
-                          transition: 'transform 0.2s',
-                          color: '#8E9297'
-                        }}
-                      >
-                        <path d="M6 9l6 6 6-6" />
-                      </svg>
-                      <span>Voice Channels</span>
+                        })
+                      ) : (
+                        <div style={{ padding: '6px 20px', fontSize: '12px', color: '#6A737D', fontStyle: 'italic' }}>
+                          No channels yet
+                        </div>
+                      )}
                     </div>
-
-                    {/* Voice Channels List */}
-                    {expandedCategories[cat._id + '-voice'] !== false && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        {voiceChannels.map(channel => {
-                          const isActive = activeChannelId === channel._id;
-                          return (
-                            <div
-                              key={channel._id}
-                              onClick={() => onSelectChannel(channel._id, channel.name, 'voice')}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent',
-                                color: isActive ? '#fff' : '#8E9297',
-                                fontWeight: isActive ? '600' : 'normal',
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isActive) {
-                                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                                  e.currentTarget.style.color = '#fff';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isActive) {
-                                  e.currentTarget.style.background = 'transparent';
-                                  e.currentTarget.style.color = '#8E9297';
-                                }
-                              }}
-                            >
-                              {/* Audio/Speaker Icon */}
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isActive ? 1 : 0.6 }}>
-                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                              </svg>
-                              <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {channel.name}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Bottom User Profile Section */}
@@ -911,6 +987,315 @@ export default function ServerSidebar({
           </div>
         );
       })()}
+
+      {/* Create Category Modal */}
+      {showCreateCategoryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#1E262F',
+            width: '100%',
+            maxWidth: '440px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '24px 24px 16px 24px' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '20px', fontWeight: 'bold' }}>Create Category</h3>
+              <p style={{ margin: '4px 0 0 0', color: '#8E9297', fontSize: '13px' }}>
+                Categories keep your server organized by grouping related channels together.
+              </p>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: '0 24px 24px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: '#8E9297', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Category Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="new-category"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  maxLength={32}
+                  style={{
+                    background: '#12181F',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '15px',
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#14AC7B'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateCategory();
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              background: '#171E26',
+              padding: '16px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '12px'
+            }}>
+              <button
+                onClick={() => setShowCreateCategoryModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateCategory}
+                disabled={!newCategoryName.trim()}
+                style={{
+                  background: '#14AC7B',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: newCategoryName.trim() ? 'pointer' : 'not-allowed',
+                  opacity: newCategoryName.trim() ? 1 : 0.5,
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  transition: 'opacity 0.2s'
+                }}
+              >
+                Create Category
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Channel Modal */}
+      {showCreateChannelModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#1E262F',
+            width: '100%',
+            maxWidth: '440px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '24px 24px 16px 24px' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '20px', fontWeight: 'bold' }}>Create Channel</h3>
+              <p style={{ margin: '4px 0 0 0', color: '#8E9297', fontSize: '13px' }}>
+                Create a space where members can chat or talk.
+              </p>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: '0 24px 24px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Channel Type Selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: '#8E9297', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Channel Type
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {/* Text Option */}
+                  <div
+                    onClick={() => setNewChannelType('text')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      background: newChannelType === 'text' ? 'rgba(20, 172, 123, 0.15)' : '#12181F',
+                      border: newChannelType === 'text' ? '1px solid #14AC7B' : '1px solid rgba(255, 255, 255, 0.05)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span style={{ fontSize: '24px', color: newChannelType === 'text' ? '#14AC7B' : '#8E9297', width: '20px', textAlign: 'center' }}>#</span>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}>Text</span>
+                      <span style={{ color: '#8E9297', fontSize: '12px' }}>Post messages, images, opinions, and puns</span>
+                    </div>
+                  </div>
+                  {/* Voice Option */}
+                  <div
+                    onClick={() => setNewChannelType('voice')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      background: newChannelType === 'voice' ? 'rgba(20, 172, 123, 0.15)' : '#12181F',
+                      border: newChannelType === 'voice' ? '1px solid #14AC7B' : '1px solid rgba(255, 255, 255, 0.05)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: newChannelType === 'voice' ? '#14AC7B' : '#8E9297' }}>
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    </svg>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}>Voice</span>
+                      <span style={{ color: '#8E9297', fontSize: '12px' }}>Hang out together with voice, video, and screen share</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Channel Name Input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: '#8E9297', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Channel Name
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: '#8E9297',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    pointerEvents: 'none'
+                  }}>
+                    {newChannelType === 'text' ? '#' : '🔊'}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="new-channel"
+                    value={newChannelName}
+                    onChange={(e) => {
+                      // format name to discord standard: lowercase, replacing spaces with dashes
+                      const val = e.target.value.toLowerCase().replace(/\s+/g, '-');
+                      setNewChannelName(val);
+                    }}
+                    maxLength={32}
+                    style={{
+                      background: '#12181F',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '6px',
+                      padding: '10px 12px 10px 32px',
+                      color: '#fff',
+                      fontSize: '15px',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      outline: 'none',
+                      transition: 'border-color 0.2s'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = '#14AC7B'}
+                    onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateChannel();
+                    }}
+                    autoFocus
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              background: '#171E26',
+              padding: '16px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: '12px'
+            }}>
+              <button
+                onClick={() => setShowCreateChannelModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateChannel}
+                disabled={!newChannelName.trim()}
+                style={{
+                  background: '#14AC7B',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: newChannelName.trim() ? 'pointer' : 'not-allowed',
+                  opacity: newChannelName.trim() ? 1 : 0.5,
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  transition: 'opacity 0.2s'
+                }}
+              >
+                Create Channel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
