@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 interface InviteLandingPageProps {
   inviteCode: string;
@@ -46,16 +44,17 @@ export default function InviteLandingPage({ inviteCode }: InviteLandingPageProps
   useEffect(() => {
     const fetchInviteDetails = async () => {
       try {
-        const res = await fetch(`${API_BASE}/servers/invite-details/${inviteCode}`);
-        const data = await res.json();
-        if (res.ok && data.success) {
+        const res = await api.get(`/servers/invite-details/${inviteCode}`);
+        const data = res.data;
+        if (data.success) {
           setServer(data.server);
         } else {
           setError(data.error || 'This invite code is invalid or has expired.');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        setError('Failed to fetch invite details.');
+        const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to fetch invite details.';
+        setError(errMsg);
       } finally {
         setLoading(false);
       }
@@ -74,14 +73,9 @@ export default function InviteLandingPage({ inviteCode }: InviteLandingPageProps
 
     setJoining(true);
     try {
-      const res = await fetch(`${API_BASE}/servers/join/${inviteCode}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post(`/servers/join/${inviteCode}`);
+      const data = res.data;
+      if (data.success) {
         if (data.serverId) {
           localStorage.setItem('selectedServerId', data.serverId);
         }
@@ -90,9 +84,10 @@ export default function InviteLandingPage({ inviteCode }: InviteLandingPageProps
         alert(data.error || 'Failed to join server');
         setJoining(false);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('An error occurred while joining the server.');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'An error occurred while joining the server.';
+      alert(errMsg);
       setJoining(false);
     }
   };

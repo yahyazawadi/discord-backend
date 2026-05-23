@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 export type StatusType = 'online' | 'idle' | 'dnd' | 'offline' | 'streaming' | 'mobile';
 
@@ -78,13 +76,9 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
   const fetchBlockedUsers = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/auth/blocked`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.get('/auth/blocked');
+      const data = res.data;
+      if (data.success) {
         setBlockedUsers(data.blockedUsers || []);
       }
     } catch (err) {
@@ -101,16 +95,9 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
   // Update Status Preference
   const handleStatusPreferenceChange = async (preference: 'auto' | 'online' | 'idle' | 'dnd' | 'offline') => {
     try {
-      const res = await fetch(`${API_BASE}/auth/status-preference`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ preference })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.put('/auth/status-preference', { preference });
+      const data = res.data;
+      if (data.success) {
         const updatedUser = { ...currentUser, userStatusPreference: preference };
         localStorage.setItem('user', JSON.stringify(updatedUser));
         setCurrentUser(updatedUser);
@@ -123,13 +110,8 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
   // Unblock a user
   const handleUnblockUser = async (userId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/auth/unblock/${userId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
+      const res = await api.post(`/auth/unblock/${userId}`);
+      if (res.status === 200) {
         await fetchBlockedUsers();
       }
     } catch (err) {
@@ -142,19 +124,12 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
     setSavingSettings(true);
     setErrorText('');
     try {
-      const res = await fetch(`${API_BASE}/auth/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          displayName: editDisplayName,
-          bio: editBio
-        })
+      const res = await api.put('/auth/profile', {
+        displayName: editDisplayName,
+        bio: editBio
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = res.data;
+      if (data.success) {
         localStorage.setItem('user', JSON.stringify(data.user));
         setCurrentUser(data.user);
       } else {
@@ -162,7 +137,8 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
       }
     } catch (err: any) {
       console.error('Failed to save profile:', err);
-      setErrorText(err.message || 'Failed to update profile');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to update profile';
+      setErrorText(errMsg);
     } finally {
       setSavingSettings(false);
     }
@@ -185,20 +161,13 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
 
       setUploadProgressText('Uploading Avatar...');
 
-      const res = await fetch(`${API_BASE}/messages/upload-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          fileName: uploadFile.name,
-          fileType: uploadFile.type
-        })
+      const res = await api.post('/messages/upload-url', {
+        fileName: uploadFile.name,
+        fileType: uploadFile.type
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.signedUrl) {
+      const data = res.data;
+      if (!data.signedUrl) {
         throw new Error(data.error || 'Failed to get upload URL');
       }
 
@@ -214,16 +183,9 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
         throw new Error('Upload to Cloudflare R2 failed');
       }
 
-      const saveRes = await fetch(`${API_BASE}/auth/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ avatar: data.publicUrl })
-      });
-      const saveData = await saveRes.json();
-      if (saveRes.ok && saveData.success) {
+      const saveRes = await api.put('/auth/profile', { avatar: data.publicUrl });
+      const saveData = saveRes.data;
+      if (saveData.success) {
         localStorage.setItem('user', JSON.stringify(saveData.user));
         setCurrentUser(saveData.user);
       } else {
@@ -231,7 +193,8 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
       }
     } catch (err: any) {
       console.error(err);
-      setErrorText(err.message || 'Avatar upload failed');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Avatar upload failed';
+      setErrorText(errMsg);
     } finally {
       setSavingSettings(false);
       setUploadProgressText('');
@@ -255,20 +218,13 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
 
       setUploadProgressText('Uploading Banner...');
 
-      const res = await fetch(`${API_BASE}/messages/upload-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          fileName: uploadFile.name,
-          fileType: uploadFile.type
-        })
+      const res = await api.post('/messages/upload-url', {
+        fileName: uploadFile.name,
+        fileType: uploadFile.type
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.signedUrl) {
+      const data = res.data;
+      if (!data.signedUrl) {
         throw new Error(data.error || 'Failed to get upload URL');
       }
 
@@ -284,16 +240,9 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
         throw new Error('Upload to Cloudflare R2 failed');
       }
 
-      const saveRes = await fetch(`${API_BASE}/auth/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ profileBanner: data.publicUrl })
-      });
-      const saveData = await saveRes.json();
-      if (saveRes.ok && saveData.success) {
+      const saveRes = await api.put('/auth/profile', { profileBanner: data.publicUrl });
+      const saveData = saveRes.data;
+      if (saveData.success) {
         localStorage.setItem('user', JSON.stringify(saveData.user));
         setCurrentUser(saveData.user);
       } else {
@@ -301,7 +250,8 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
       }
     } catch (err: any) {
       console.error(err);
-      setErrorText(err.message || 'Banner upload failed');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Banner upload failed';
+      setErrorText(errMsg);
     } finally {
       setSavingSettings(false);
       setUploadProgressText('');
@@ -311,10 +261,7 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
   // Log Out Flow
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE}/auth/logout`, { 
-        method: 'POST',
-        credentials: 'include'
-      });
+      await api.post('/auth/logout');
     } catch (err) {
       console.error('Logout error:', err);
     }

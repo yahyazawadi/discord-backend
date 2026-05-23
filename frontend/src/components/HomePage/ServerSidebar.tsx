@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 interface ChannelType {
   _id: string;
@@ -69,13 +67,9 @@ export default function ServerSidebar({
   const fetchServerDetails = async () => {
     if (!token || !serverId) return;
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success && data.server) {
+      const res = await api.get(`/servers/${serverId}`);
+      const data = res.data;
+      if (data.success && data.server) {
         setServer(data.server);
         
         // Initialize expanded categories
@@ -125,72 +119,40 @@ export default function ServerSidebar({
       let data;
 
       if (action === 'promote') {
-        res = await fetch(`${API_BASE}/servers/${serverId}/admins`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ userId: trimmedTargetId })
-        });
-        data = await res.json();
+        res = await api.post(`/servers/${serverId}/admins`, { userId: trimmedTargetId });
+        data = res.data;
       } else if (action === 'demote') {
-        res = await fetch(`${API_BASE}/servers/${serverId}/admins/${trimmedTargetId}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        data = await res.json();
+        res = await api.delete(`/servers/${serverId}/admins/${trimmedTargetId}`);
+        data = res.data;
       } else if (action === 'kick') {
         if (!window.confirm('Are you sure you want to kick this member?')) return;
-        res = await fetch(`${API_BASE}/servers/${serverId}/kick/${trimmedTargetId}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        data = await res.json();
+        res = await api.post(`/servers/${serverId}/kick/${trimmedTargetId}`);
+        data = res.data;
       } else if (action === 'ban') {
         if (!window.confirm('Are you sure you want to permanently ban this member?')) return;
-        res = await fetch(`${API_BASE}/servers/${serverId}/ban/${trimmedTargetId}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        data = await res.json();
+        res = await api.post(`/servers/${serverId}/ban/${trimmedTargetId}`);
+        data = res.data;
       } else if (action === 'leave') {
         if (!window.confirm('Are you sure you want to leave this server?')) return;
-        res = await fetch(`${API_BASE}/servers/${serverId}/leave`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        data = await res.json();
-        if (res.ok && data.success) {
+        res = await api.post(`/servers/${serverId}/leave`);
+        data = res.data;
+        if (data.success) {
           alert('Successfully left the server.');
           window.location.href = '/';
           return;
         }
       } else if (action === 'delete') {
         if (!window.confirm('🚨 WARNING: Are you absolutely sure you want to DELETE this server? This action is permanent and cannot be undone.')) return;
-        res = await fetch(`${API_BASE}/servers/${serverId}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        data = await res.json();
-        if (res.ok && data.success) {
+        res = await api.delete(`/servers/${serverId}`);
+        data = res.data;
+        if (data.success) {
           alert('Server deleted successfully.');
           window.location.href = '/';
           return;
         }
       }
 
-      if (res && res.ok && data && data.success) {
+      if (data && data.success) {
         setAdminStatusText(`✅ Success: ${data.message || 'Action executed successfully!'}`);
         setTargetUserId('');
         // Reload details
@@ -200,7 +162,8 @@ export default function ServerSidebar({
       }
     } catch (err: any) {
       console.error(err);
-      setAdminStatusText(`❌ Error: ${err.message || 'Network error occurred.'}`);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Network error occurred.';
+      setAdminStatusText(`❌ Error: ${errMsg}`);
     }
   };
 

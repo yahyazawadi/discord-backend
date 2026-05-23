@@ -3,6 +3,8 @@ import gsap from 'gsap';
 import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './RegisterPage.css';
 
+import api from '../../utils/api';
+
 export default function RegisterPage() {
   const cardRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState('');
@@ -25,10 +27,6 @@ export default function RegisterPage() {
     }
   }, []);
 
-  const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? `http://${window.location.hostname}:5001/api/auth`
-    : `${window.location.origin}/api/auth`;
-
   // SPA navigation helper
   const handleNavigate = (e: React.MouseEvent, path: string) => {
     e.preventDefault();
@@ -46,16 +44,9 @@ export default function RegisterPage() {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(`${API_BASE}/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, username, password, birthdate }),
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
+      const response = await api.post('/auth/register', { email, username, password, birthdate });
+      const data = response.data;
+      if (data.success) {
         if (data.otp) {
           setSentOtp(data.otp);
         }
@@ -64,8 +55,9 @@ export default function RegisterPage() {
       } else {
         setError(data.error || data.message || 'Registration failed');
       }
-    } catch (err) {
-      setError('Connection failed. Is the server running?');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Is the server running?';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -81,16 +73,9 @@ export default function RegisterPage() {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(`${API_BASE}/verify-otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, otp }),
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
+      const response = await api.post('/auth/verify-otp', { email, otp });
+      const data = response.data;
+      if (data.success) {
         setMessage('Account verified successfully! Redirecting...');
         if (data.token) {
           localStorage.setItem('token', data.token);
@@ -104,8 +89,9 @@ export default function RegisterPage() {
       } else {
         setError(data.error || 'Verification failed. Please try again.');
       }
-    } catch (err) {
-      setError('Connection failed. Please try again.');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Verification failed. Please try again.';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -117,15 +103,9 @@ export default function RegisterPage() {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(`${API_BASE}/resend-otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
+      const response = await api.post('/auth/resend-otp', { email });
+      const data = response.data;
+      if (data.success) {
         if (data.otp) {
           setSentOtp(data.otp);
         }
@@ -133,8 +113,9 @@ export default function RegisterPage() {
       } else {
         setError(data.error || 'Failed to resend OTP.');
       }
-    } catch (err) {
-      setError('Connection failed. Please try again.');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Please try again.';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }

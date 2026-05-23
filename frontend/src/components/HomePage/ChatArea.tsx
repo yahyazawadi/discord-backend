@@ -2,9 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { getSocket, connectSocket } from '../../utils/socket';
 import useVoiceChannel from '../../hooks/useVoiceChannel';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 interface ChatAreaProps {
   conversationId: string | null;
@@ -269,15 +267,11 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       setLoading(true);
       try {
         const url = channelId 
-          ? `${API_BASE}/messages/channel/${channelId}` 
-          : `${API_BASE}/messages/conversation/${conversationId}`;
-        const res = await fetch(url, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
+          ? `/messages/channel/${channelId}` 
+          : `/messages/conversation/${conversationId}`;
+        const res = await api.get(url);
+        const data = res.data;
+        if (data.success) {
           setMessages(data.messages || []);
         }
       } catch (err) {
@@ -288,7 +282,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     };
 
     fetchMessages();
-  }, [conversationId, channelId, token]);
+  }, [conversationId, channelId]);
 
   // Handle socket rooms + real-time listeners
   useEffect(() => {
@@ -371,12 +365,12 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     const fetchGifs = async () => {
       setLoadingGifs(true);
       try {
-        let endpoint = `${API_BASE}/giphy/trending?limit=16`;
+        let endpoint = `/giphy/trending?limit=16`;
         if (giphySearch.trim()) {
-          endpoint = `${API_BASE}/giphy/search?q=${encodeURIComponent(giphySearch.trim())}&limit=16`;
+          endpoint = `/giphy/search?q=${encodeURIComponent(giphySearch.trim())}&limit=16`;
         }
-        const res = await fetch(endpoint);
-        const data = await res.json();
+        const res = await api.get(endpoint);
+        const data = res.data;
         if (data && data.data) {
           setGifs(data.data);
         }
@@ -458,23 +452,18 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     if (!editingContent.trim()) return;
 
     try {
-      const res = await fetch(`${API_BASE}/messages/edit/${messageId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ content: editingContent.trim() })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.put(`/messages/edit/${messageId}`, { content: editingContent.trim() });
+      const data = res.data;
+      if (data.success) {
         setEditingMessageId(null);
         setEditingContent('');
       } else {
         alert(data.error || 'Failed to edit message');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving edited message:', err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to edit message';
+      alert(errMsg);
     }
   };
 
@@ -483,20 +472,17 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     if (!window.confirm('Are you sure you want to delete this message permanently?')) return;
 
     try {
-      const res = await fetch(`${API_BASE}/messages/${messageId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.delete(`/messages/${messageId}`);
+      const data = res.data;
+      if (data.success) {
         setMessages((prev) => prev.filter((m) => m._id !== messageId));
       } else {
         alert(data.error || 'Failed to delete message');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting message:', err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to delete message';
+      alert(errMsg);
     }
   };
 

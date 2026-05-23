@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 interface UserProfilePanelProps {
   userId: string | null;
@@ -63,21 +61,17 @@ export default function UserProfilePanel({ userId }: UserProfilePanelProps) {
       setLoading(true);
       setError(null);
       try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/auth/profile/${userId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
+        const res = await api.get(`/auth/profile/${userId}`);
+        const data = res.data;
+        if (data.success) {
           setProfile(data);
         } else {
           setError(data.error || 'Failed to fetch user profile');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to fetch user profile details:', err);
-        setError('Failed to load profile');
+        const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to load profile';
+        setError(errMsg);
       } finally {
         setLoading(false);
       }

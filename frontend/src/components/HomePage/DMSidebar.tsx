@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 export type StatusType = 'online' | 'idle' | 'dnd' | 'offline' | 'streaming' | 'mobile';
 
@@ -122,13 +120,9 @@ export default function DMSidebar({ activeDmId, onSelectDm, onOpenSettings, open
   const fetchConversations = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/messages/conversations`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success && Array.isArray(data.conversations)) {
+      const res = await api.get('/messages/conversations');
+      const data = res.data;
+      if (data.success && Array.isArray(data.conversations)) {
         const mapped = data.conversations.map((c: any) => {
           const recipient = c.participants.find((p: any) => p._id !== currentUser._id) || currentUser;
           
@@ -160,13 +154,9 @@ export default function DMSidebar({ activeDmId, onSelectDm, onOpenSettings, open
     if (!token) return;
     setLoadingUsers(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/users`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.get('/auth/users');
+      const data = res.data;
+      if (data.success) {
         setUsersList(data.users || []);
       }
     } catch (err) {
@@ -211,16 +201,9 @@ export default function DMSidebar({ activeDmId, onSelectDm, onOpenSettings, open
   // Create or select conversation
   const handleSelectUser = async (userId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/messages/conversations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ recipientId: userId })
-      });
-      const data = await res.json();
-      if (res.ok && data.success && data.conversation) {
+      const res = await api.post('/messages/conversations', { recipientId: userId });
+      const data = res.data;
+      if (data.success && data.conversation) {
         setIsSearchOpen(false);
         setSearchQuery('');
         await fetchConversations();

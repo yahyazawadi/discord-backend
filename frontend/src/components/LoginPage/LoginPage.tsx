@@ -3,6 +3,8 @@ import gsap from 'gsap';
 import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './LoginPage.css';
 
+import api from '../../utils/api';
+
 export default function LoginPage() {
   const cardRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState('');
@@ -18,10 +20,6 @@ export default function LoginPage() {
       );
     }
   }, []);
-
-  const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? `http://${window.location.hostname}:5001/api/auth`
-    : `${window.location.origin}/api/auth`;
 
   // SPA navigation helper
   const handleNavigate = (e: React.MouseEvent, path: string) => {
@@ -39,16 +37,9 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_BASE}/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
+      const response = await api.post('/auth/login', { email, password });
+      const data = response.data;
+      if (data.success) {
         if (data.token) {
           localStorage.setItem('token', data.token);
         }
@@ -60,8 +51,9 @@ export default function LoginPage() {
       } else {
         setError(data.error || data.message || 'Login failed. Please check your credentials.');
       }
-    } catch (err) {
-      setError('Connection failed. Is the server running?');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Is the server running?';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }

@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSocket } from '../../utils/socket';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #e056fd 0%, #686de0 100%)',
@@ -96,12 +94,8 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/servers`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
+      const res = await api.get('/servers');
+      const data = res.data;
       if (data.success && Array.isArray(data.servers)) {
         setServers(data.servers);
       }
@@ -182,21 +176,13 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
       setUploadProgress('Uploading...');
 
       // 2. Request pre-signed R2 upload url from backend
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/messages/upload-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          fileName: uploadFile.name,
-          fileType: uploadFile.type
-        })
+      const res = await api.post('/messages/upload-url', {
+        fileName: uploadFile.name,
+        fileType: uploadFile.type
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.signedUrl) {
+      const data = res.data;
+      if (!data.signedUrl) {
         throw new Error(data.error || 'Failed to get upload URL');
       }
 
@@ -218,7 +204,8 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
       setUploadProgress('Uploaded Successfully!');
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Image upload failed');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Image upload failed';
+      setError(errMsg);
       setUploadProgress('');
     } finally {
       setUploadLoading(false);
@@ -244,21 +231,13 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
       setBannerUploadProgress('Uploading...');
 
       // 2. Request pre-signed R2 upload url from backend
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/messages/upload-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          fileName: uploadFile.name,
-          fileType: uploadFile.type
-        })
+      const res = await api.post('/messages/upload-url', {
+        fileName: uploadFile.name,
+        fileType: uploadFile.type
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.signedUrl) {
+      const data = res.data;
+      if (!data.signedUrl) {
         throw new Error(data.error || 'Failed to get upload URL');
       }
 
@@ -280,7 +259,8 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
       setBannerUploadProgress('Uploaded Successfully!');
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Banner upload failed');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Banner upload failed';
+      setError(errMsg);
       setBannerUploadProgress('');
     } finally {
       setBannerUploadLoading(false);
@@ -295,24 +275,16 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
     }
     setLoading(true);
     setError('');
-    const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`${API_BASE}/servers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: serverName.trim(),
-          description: serverDescription.trim() || undefined,
-          icon: serverIcon.trim() || undefined,
-          banner: serverBanner.trim() || undefined,
-          isPrivate
-        })
+      const res = await api.post('/servers', {
+        name: serverName.trim(),
+        description: serverDescription.trim() || undefined,
+        icon: serverIcon.trim() || undefined,
+        banner: serverBanner.trim() || undefined,
+        isPrivate
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = res.data;
+      if (data.success) {
         // Close modal and refresh list
         setIsModalOpen(false);
         setServerName('');
@@ -330,8 +302,9 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
       } else {
         setError(data.error || 'Failed to create server');
       }
-    } catch (err) {
-      setError('Connection failed. Please try again.');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Please try again.';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }

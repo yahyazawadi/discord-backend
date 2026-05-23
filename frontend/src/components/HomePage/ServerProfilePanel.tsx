@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getSocket } from '../../utils/socket';
-
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 interface ServerProfilePanelProps {
   serverId: string;
@@ -72,22 +69,19 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
   const fetchServerDetails = async () => {
     if (!token || !serverId) return;
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.get(`/servers/${serverId}`);
+      const data = res.data;
+      if (data.success) {
         setServerDetails(data.server);
         const myMember = data.server.members.find((m: MemberType) => m.user && m.user._id === currentUserId);
         setNicknameInput(myMember?.nickname || '');
       } else {
         setError(data.error || 'Failed to fetch server details');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load server details:', err);
-      setError('Failed to load server details');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to load server details';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -146,65 +140,52 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
   const generateNewInvite = async () => {
     if (!window.confirm('Are you sure you want to invalidate the existing invite code and generate a new one?')) return;
     try {
-      const res = await fetch(`${API_BASE}/servers/invite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ serverId })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post('/servers/invite', { serverId });
+      const data = res.data;
+      if (data.success) {
         setServerDetails(data.server);
         alert('New invite code generated successfully!');
       } else {
         alert(data.error || 'Failed to generate new invite code');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to generate new invite code';
+      alert(errMsg);
     }
   };
 
   const handleUpdateNickname = async () => {
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/nickname`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ nickname: nicknameInput })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.put(`/servers/${serverId}/nickname`, { nickname: nicknameInput });
+      const data = res.data;
+      if (data.success) {
         fetchServerDetails();
         setEditingNickname(false);
       } else {
         alert(data.error || 'Failed to update nickname');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to update nickname';
+      alert(errMsg);
     }
   };
 
   const handleLeaveServer = async () => {
     if (!window.confirm('Are you sure you want to leave this server?')) return;
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/leave`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post(`/servers/${serverId}/leave`);
+      const data = res.data;
+      if (data.success) {
         window.location.reload();
       } else {
         alert(data.error || 'Failed to leave server');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to leave server';
+      alert(errMsg);
     }
   };
 
@@ -212,78 +193,66 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
   const handleKick = async (userId: string, username: string) => {
     if (!window.confirm(`Are you sure you want to kick @${username}?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/kick/${userId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post(`/servers/${serverId}/kick/${userId}`);
+      const data = res.data;
+      if (data.success) {
         fetchServerDetails();
       } else {
         alert(data.error || 'Failed to kick user');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to kick user';
+      alert(errMsg);
     }
   };
 
   const handleBan = async (userId: string, username: string) => {
     if (!window.confirm(`Are you sure you want to BAN @${username} permanently?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/ban/${userId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post(`/servers/${serverId}/ban/${userId}`);
+      const data = res.data;
+      if (data.success) {
         fetchServerDetails();
       } else {
         alert(data.error || 'Failed to ban user');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to ban user';
+      alert(errMsg);
     }
   };
 
   const handlePromote = async (userId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/admins/${userId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post(`/servers/${serverId}/admins/${userId}`);
+      const data = res.data;
+      if (data.success) {
         fetchServerDetails();
       } else {
         alert(data.error || 'Failed to promote user');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to promote user';
+      alert(errMsg);
     }
   };
 
   const handleDemote = async (userId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/admins/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.delete(`/servers/${serverId}/admins/${userId}`);
+      const data = res.data;
+      if (data.success) {
         fetchServerDetails();
       } else {
         alert(data.error || 'Failed to demote user');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to demote user';
+      alert(errMsg);
     }
   };
 

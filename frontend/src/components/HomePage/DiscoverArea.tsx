@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+import api from '../../utils/api';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #e056fd 0%, #686de0 100%)',
@@ -36,25 +34,21 @@ export default function DiscoverArea({ onJoinServer }: DiscoverAreaProps) {
   const fetchPublicServers = async (query = '') => {
     setLoading(true);
     setError('');
-    const token = localStorage.getItem('token');
     try {
       const url = query 
-        ? `${API_BASE}/servers/explore?search=${encodeURIComponent(query)}`
-        : `${API_BASE}/servers/explore`;
+        ? `/servers/explore?search=${encodeURIComponent(query)}`
+        : `/servers/explore`;
         
-      const res = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.get(url);
+      const data = res.data;
+      if (data.success) {
         setServers(data.servers || []);
       } else {
         setError(data.error || 'Failed to load public servers');
       }
-    } catch (err) {
-      setError('Connection failed. Is the server running?');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Is the server running?';
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -77,23 +71,18 @@ export default function DiscoverArea({ onJoinServer }: DiscoverAreaProps) {
   }, [searchQuery]);
 
   const handleJoin = async (serverId: string) => {
-    const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`${API_BASE}/servers/${serverId}/join-direct`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const res = await api.post(`/servers/${serverId}/join-direct`);
+      const data = res.data;
+      if (data.success) {
         // Trigger page updates or redirect user to home server context
         onJoinServer(serverId);
       } else {
         alert(data.error || 'Failed to join server');
       }
-    } catch (err) {
-      alert('Error joining server');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Error joining server';
+      alert(errMsg);
     }
   };
 

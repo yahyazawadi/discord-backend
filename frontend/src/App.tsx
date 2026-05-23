@@ -5,6 +5,8 @@ import HomePage from './components/HomePage/HomePage';
 import Preloader from './components/Preloader/Preloader';
 import InviteLandingPage from './components/InviteLandingPage/InviteLandingPage';
 
+import api from './utils/api';
+
 export default function App() {
   const [route, setRoute] = useState(window.location.pathname);
   const [loading, setLoading] = useState(true);
@@ -25,18 +27,9 @@ export default function App() {
     if (pendingInvite && hasToken) {
       const autoJoin = async () => {
         try {
-          const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? `http://${window.location.hostname}:5001/api`
-            : `${window.location.origin}/api`;
-
-          const res = await fetch(`${API_BASE}/servers/join/${pendingInvite}`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${hasToken}`
-            }
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
+          const res = await api.post(`/servers/join/${pendingInvite}`);
+          const data = res.data;
+          if (data.success) {
             if (data.serverId) {
               localStorage.setItem('selectedServerId', data.serverId);
             }
