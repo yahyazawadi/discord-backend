@@ -8,10 +8,12 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
 
 interface ChatAreaProps {
   conversationId: string | null;
+  channelId: string | null;
   recipientName: string;
   recipientAvatar?: string | null;
   initialCallType?: 'audio' | 'video' | null;
   onClearInitialCallType?: () => void;
+  isVoice?: boolean;
 }
 
 const VideoFeed = ({ stream, isLocal, isScreenShare, label }: { stream: MediaStream; isLocal: boolean; isScreenShare?: boolean; label: string }) => {
@@ -115,7 +117,7 @@ const isGifUrl = (text: string) => {
          (t.includes('giphy.com/') || t.endsWith('.gif') || t.includes('.giphy.com/media/'));
 };
 
-export default function ChatArea({ conversationId, recipientName, recipientAvatar, initialCallType, onClearInitialCallType }: ChatAreaProps) {
+export default function ChatArea({ conversationId, channelId, recipientName, recipientAvatar, initialCallType, onClearInitialCallType, isVoice }: ChatAreaProps) {
   // activeCallChannelId drives the hook — it's set independently so the hook
   // gets the real channelId on the *next* render after we decide to call.
   const [activeCallChannelId, setActiveCallChannelId] = useState<string | null>(null);
@@ -150,15 +152,18 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
   leaveChannelRef.current = leaveChannel;
 
   const handleStartCall = (type: 'audio' | 'video') => {
-    if (!conversationId) return;
-    console.log('[ChatArea] Starting call, type:', type, 'conversationId:', conversationId);
+    if (!conversationId && !channelId) return;
+    console.log('[ChatArea] Starting call, type:', type, 'conversationId:', conversationId, 'channelId:', channelId);
     const s = getSocket();
     if (!s.connected) {
       connectSocket();
     }
-    s.emit('initiate_call', { conversationId, type });
+    const targetId = conversationId || channelId;
+    if (conversationId) {
+      s.emit('initiate_call', { conversationId, type });
+    }
     setCallType(type);
-    setActiveCallChannelId(conversationId); // triggers hook activation on next render
+    setActiveCallChannelId(targetId); // triggers hook activation on next render
   };
 
   const handleEndCall = () => {
@@ -167,17 +172,21 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     setCallType(null);
   };
 
-  // End call when switching conversations
+  // End call when switching conversations or channels
   const prevConversationIdRef = useRef<string | null>(null);
+  const prevChannelIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (prevConversationIdRef.current !== null && prevConversationIdRef.current !== conversationId) {
-      // conversation actually changed — hang up
+    const conversationChanged = prevConversationIdRef.current !== null && prevConversationIdRef.current !== conversationId;
+    const channelChanged = prevChannelIdRef.current !== null && prevChannelIdRef.current !== channelId;
+    if (conversationChanged || channelChanged) {
+      // conversation/channel actually changed — hang up
       leaveChannelRef.current();
       setActiveCallChannelId(null);
       setCallType(null);
     }
     prevConversationIdRef.current = conversationId;
-  }, [conversationId]);
+    prevChannelIdRef.current = channelId;
+  }, [conversationId, channelId]);
 
   // Sync with incoming call accept trigger from HomePage
   useEffect(() => {
@@ -191,6 +200,17 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     }
   }, [initialCallType, conversationId]);
 
+  // Auto-join voice channel when isVoice is true
+  useEffect(() => {
+    if (channelId && isVoice) {
+      console.log('[ChatArea] Auto-joining voice channel:', channelId);
+      const s = getSocket();
+      if (!s.connected) connectSocket();
+      setCallType('audio');
+      setActiveCallChannelId(channelId);
+    }
+  }, [channelId, isVoice]);
+
   // Listen for call decline events
   useEffect(() => {
     if (!callActive) return;
@@ -202,7 +222,7 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
       }
     };
     s.on('call_declined', handleCallDeclined);
-    return () => { s.off('call_declined', handleCallDeclined); };
+    return () => { s.on('call_declined', handleCallDeclined); };
   }, [callActive, activeCallChannelId]);
 
   const [inputValue, setInputValue] = useState('');
@@ -238,9 +258,9 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
   });
   const currentUserId = currentUser._id;
 
-  // Fetch messages when conversationId changes
+  // Fetch messages when conversationId or channelId changes
   useEffect(() => {
-    if (!conversationId) {
+    if (!conversationId && !channelId) {
       setMessages([]);
       return;
     }
@@ -248,7 +268,10 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     const fetchMessages = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/messages/conversation/${conversationId}`, {
+        const url = channelId 
+          ? `${API_BASE}/messages/channel/${channelId}` 
+          : `${API_BASE}/messages/conversation/${conversationId}`;
+        const res = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -265,21 +288,28 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     };
 
     fetchMessages();
-  }, [conversationId, token]);
+  }, [conversationId, channelId, token]);
 
   // Handle socket rooms + real-time listeners
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId && !channelId) return;
 
     // Ensure connection is active
     connectSocket();
     const socket = getSocket();
 
-    // Join the target DM conversation room
-    socket.emit('join_conversation', { conversationId });
+    // Join the target room
+    if (channelId) {
+      socket.emit('join_channel', { channelId });
+    } else {
+      socket.emit('join_conversation', { conversationId });
+    }
 
     const handleReceiveMessage = (newMessage: any) => {
-      if (newMessage.conversation === conversationId) {
+      if (
+        (conversationId && newMessage.conversation === conversationId) ||
+        (channelId && newMessage.channel === channelId)
+      ) {
         setMessages((prev) => {
           if (prev.some((m) => m._id === newMessage._id)) return prev;
           return [...prev, newMessage];
@@ -288,7 +318,10 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     };
 
     const handleMessageUpdated = (updatedMessage: any) => {
-      if (updatedMessage.conversation === conversationId) {
+      if (
+        (conversationId && updatedMessage.conversation === conversationId) ||
+        (channelId && updatedMessage.channel === channelId)
+      ) {
         setMessages((prev) =>
           prev.map((m) => (m._id === updatedMessage._id ? updatedMessage : m))
         );
@@ -300,7 +333,10 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     };
 
     const handleUserTyping = (data: any) => {
-      if (data.conversationId === conversationId && data.isTyping) {
+      const isTargetRoom = channelId 
+        ? data.channelId === channelId 
+        : data.conversationId === conversationId;
+      if (isTargetRoom && data.isTyping) {
         setTypingUsers((prev) => {
           if (prev.includes(data.username)) return prev;
           return [...prev, data.username];
@@ -316,13 +352,17 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     socket.on('user_typing', handleUserTyping);
 
     return () => {
-      socket.emit('leave_conversation', { conversationId });
+      if (channelId) {
+        socket.emit('leave_channel', { channelId });
+      } else {
+        socket.emit('leave_conversation', { conversationId });
+      }
       socket.off('receive_message', handleReceiveMessage);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
       socket.off('user_typing', handleUserTyping);
     };
-  }, [conversationId]);
+  }, [conversationId, channelId]);
 
   // GIPHY API loader
   useEffect(() => {
@@ -358,11 +398,12 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
 
   // Send message trigger
   const handleSendMessage = () => {
-    if (!inputValue.trim() || !conversationId) return;
+    if (!inputValue.trim() || (!conversationId && !channelId)) return;
 
     const socket = getSocket();
     socket.emit('send_message', {
-      conversationId,
+      conversationId: conversationId || null,
+      channelId: channelId || null,
       content: inputValue.trim(),
       attachments: [],
       isAnonymous: false,
@@ -370,7 +411,11 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
     });
 
     // Notify typing stopped
-    socket.emit('typing', { conversationId, isTyping: false });
+    socket.emit('typing', { 
+      conversationId: conversationId || null, 
+      channelId: channelId || null, 
+      isTyping: false 
+    });
     
     setInputValue('');
     setReplyingToMessage(null);
@@ -380,17 +425,25 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
     
-    if (!conversationId) return;
+    if (!conversationId && !channelId) return;
     const socket = getSocket();
 
-    socket.emit('typing', { conversationId, isTyping: true });
+    socket.emit('typing', { 
+      conversationId: conversationId || null, 
+      channelId: channelId || null, 
+      isTyping: true 
+    });
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('typing', { conversationId, isTyping: false });
+      socket.emit('typing', { 
+        conversationId: conversationId || null, 
+        channelId: channelId || null, 
+        isTyping: false 
+      });
     }, 2000);
   };
 
@@ -449,11 +502,12 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
 
   // Send Giphy GIF link
   const handleSendGif = (gifUrl: string) => {
-    if (!conversationId) return;
+    if (!conversationId && !channelId) return;
 
     const socket = getSocket();
     socket.emit('send_message', {
-      conversationId,
+      conversationId: conversationId || null,
+      channelId: channelId || null,
       content: gifUrl,
       attachments: [],
       isAnonymous: false,
@@ -466,7 +520,7 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
   };
 
   // Render welcome state if no conversation is open
-  if (!conversationId) {
+  if (!conversationId && !channelId) {
     return (
       <section className="chat-area" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px' }}>
         <div style={{ maxWidth: '480px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
@@ -479,9 +533,9 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
           }}>
             💬
           </div>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', margin: 0 }}>Select a Conversation</h2>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', margin: 0 }}>Select a Conversation or Channel</h2>
           <p style={{ fontSize: '14px', color: '#8E9297', margin: 0, lineHeight: '1.6' }}>
-            Choose a friend from the sidebar direct messages to start chatting, or click <strong>Find a conversation</strong> at the top to search or connect with someone new!
+            Choose a friend from direct messages or select a server channel from the sidebar to start chatting!
           </p>
         </div>
       </section>
@@ -493,44 +547,65 @@ export default function ChatArea({ conversationId, recipientName, recipientAvata
       {/* Header */}
       <header className="chat-header">
         <div className="chat-header-left">
-          <img
-            src={recipientAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${recipientName}`}
-            alt={recipientName}
-            className="chat-header-avatar"
-          />
+          {channelId ? (
+            <div style={{
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px',
+              color: '#8E9297',
+              marginRight: '8px',
+              fontWeight: 'bold',
+              userSelect: 'none'
+            }}>
+              #
+            </div>
+          ) : (
+            <img
+              src={recipientAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${recipientName}`}
+              alt={recipientName}
+              className="chat-header-avatar"
+            />
+          )}
           <span className="chat-header-name">{recipientName}</span>
         </div>
 
         <div className="chat-header-actions">
-          <button
-            className="chat-header-action-btn"
-            aria-label="Voice Call"
-            onClick={() => handleStartCall('audio')}
-            disabled={callActive}
-            style={{ opacity: callActive ? 0.5 : 1, cursor: callActive ? 'not-allowed' : 'pointer' }}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M6.56459 1.47368V0C10.5872 0 13.8586 3.30547 13.8586 7.36842H12.3998C12.3998 4.11821 9.78197 1.47368 6.56459 1.47368ZM10.941 7.36842H9.48219C9.48219 5.74368 8.17365 4.42105 6.56459 4.42105V2.94737C8.97818 2.94737 10.941 4.93021 10.941 7.36842ZM6.56459 5.89474V7.36842H8.02339C8.02339 6.55495 7.37058 5.89474 6.56459 5.89474ZM8.75279 9.57895H11.6704C12.0737 9.57895 12.3998 9.90832 12.3998 10.3158V13.2632C12.3998 13.6706 12.0737 14 11.6704 14H8.02339C3.59229 14 0 10.3711 0 5.89474V2.21053C0 1.80305 0.326771 1.47368 0.729399 1.47368H3.647C4.05035 1.47368 4.3764 1.80305 4.3764 2.21053V5.15789C4.3764 5.56537 4.05035 5.89474 3.647 5.89474H2.9176C2.96355 8.79642 5.1058 11.0526 8.02339 11.0526V10.3158C8.02339 9.90832 8.34943 9.57895 8.75279 9.57895Z"
-                fill="#14AC7B"
-              />
-            </svg>
-          </button>
+          {!channelId && (
+            <>
+              <button
+                className="chat-header-action-btn"
+                aria-label="Voice Call"
+                onClick={() => handleStartCall('audio')}
+                disabled={callActive}
+                style={{ opacity: callActive ? 0.5 : 1, cursor: callActive ? 'not-allowed' : 'pointer' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M6.56459 1.47368V0C10.5872 0 13.8586 3.30547 13.8586 7.36842H12.3998C12.3998 4.11821 9.78197 1.47368 6.56459 1.47368ZM10.941 7.36842H9.48219C9.48219 5.74368 8.17365 4.42105 6.56459 4.42105V2.94737C8.97818 2.94737 10.941 4.93021 10.941 7.36842ZM6.56459 5.89474V7.36842H8.02339C8.02339 6.55495 7.37058 5.89474 6.56459 5.89474ZM8.75279 9.57895H11.6704C12.0737 9.57895 12.3998 9.90832 12.3998 10.3158V13.2632C12.3998 13.6706 12.0737 14 11.6704 14H8.02339C3.59229 14 0 10.3711 0 5.89474V2.21053C0 1.80305 0.326771 1.47368 0.729399 1.47368H3.647C4.05035 1.47368 4.3764 1.80305 4.3764 2.21053V5.15789C4.3764 5.56537 4.05035 5.89474 3.647 5.89474H2.9176C2.96355 8.79642 5.1058 11.0526 8.02339 11.0526V10.3158C8.02339 9.90832 8.34943 9.57895 8.75279 9.57895Z"
+                    fill="#14AC7B"
+                  />
+                </svg>
+              </button>
 
-          <button
-            className="chat-header-action-btn"
-            aria-label="Video Call"
-            onClick={() => handleStartCall('video')}
-            disabled={callActive}
-            style={{ opacity: callActive ? 0.5 : 1, cursor: callActive ? 'not-allowed' : 'pointer' }}
-          >
-            <svg width="17" height="14" viewBox="0 0 17 13" fill="none">
-              <path
-                d="M15.6209 3.69914C15.385 3.54229 15.0898 3.52943 14.8426 3.66143L12.8002 4.756V2.71429C12.8002 1.76886 12.0826 1 11.2002 1H1.6002C0.717799 1 0.000199318 1.76886 0.000199318 2.71429V11.2857C0.000199318 12.232 0.717799 13 1.6002 13H11.2002C12.0826 13 12.8002 12.232 12.8002 11.2857V9.244L14.8426 10.3377C14.9554 10.3986 15.0778 10.4286 15.2002 10.4286C15.3466 10.4286 15.4922 10.3849 15.621 10.3009C15.8562 10.144 16.0002 9.86886 16.0002 9.57143V4.42857C16.0002 4.13114 15.8562 3.856 15.6209 3.69914Z"
-                fill="#14AC7B"
-              />
-            </svg>
-          </button>
+              <button
+                className="chat-header-action-btn"
+                aria-label="Video Call"
+                onClick={() => handleStartCall('video')}
+                disabled={callActive}
+                style={{ opacity: callActive ? 0.5 : 1, cursor: callActive ? 'not-allowed' : 'pointer' }}
+              >
+                <svg width="17" height="14" viewBox="0 0 17 13" fill="none">
+                  <path
+                    d="M15.6209 3.69914C15.385 3.54229 15.0898 3.52943 14.8426 3.66143L12.8002 4.756V2.71429C12.8002 1.76886 12.0826 1 11.2002 1H1.6002C0.717799 1 0.000199318 1.76886 0.000199318 2.71429V11.2857C0.000199318 12.232 0.717799 13 1.6002 13H11.2002C12.0826 13 12.8002 12.232 12.8002 11.2857V9.244L14.8426 10.3377C14.9554 10.3986 15.0778 10.4286 15.2002 10.4286C15.3466 10.4286 15.4922 10.3849 15.621 10.3009C15.8562 10.144 16.0002 9.86886 16.0002 9.57143V4.42857C16.0002 4.13114 15.8562 3.856 15.6209 3.69914Z"
+                    fill="#14AC7B"
+                  />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </header>
 

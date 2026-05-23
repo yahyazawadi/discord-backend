@@ -3,6 +3,7 @@ import LoginPage from './components/LoginPage/LoginPage';
 import RegisterPage from './components/RegisterPage/RegisterPage';
 import HomePage from './components/HomePage/HomePage';
 import Preloader from './components/Preloader/Preloader';
+import InviteLandingPage from './components/InviteLandingPage/InviteLandingPage';
 
 export default function App() {
   const [route, setRoute] = useState(window.location.pathname);
@@ -16,11 +17,45 @@ export default function App() {
     // Listen for history push/pop
     window.addEventListener('popstate', handleLocationChange);
 
-    // Robust route guard redirection
     const hasToken = localStorage.getItem('token');
     const path = window.location.pathname;
 
-    if (path === '/home' && !hasToken) {
+    // Check for pending invite auto-joining if authenticated
+    const pendingInvite = localStorage.getItem('pendingInvite');
+    if (pendingInvite && hasToken) {
+      const autoJoin = async () => {
+        try {
+          const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? `http://${window.location.hostname}:5001/api`
+            : `${window.location.origin}/api`;
+
+          const res = await fetch(`${API_BASE}/servers/join/${pendingInvite}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${hasToken}`
+            }
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            if (data.serverId) {
+              localStorage.setItem('selectedServerId', data.serverId);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to auto join pending invite:', err);
+        } finally {
+          localStorage.removeItem('pendingInvite');
+          window.location.href = '/home';
+        }
+      };
+      autoJoin();
+      return () => window.removeEventListener('popstate', handleLocationChange);
+    }
+
+    // Robust route guard redirection
+    if (path.startsWith('/invite/')) {
+      // Do nothing, let it render the public invite page
+    } else if (path === '/home' && !hasToken) {
       window.history.replaceState({}, '', '/login');
       setRoute('/login');
     } else if ((path === '/login' || path === '/register' || path === '/' || path === '') && hasToken) {
@@ -36,6 +71,10 @@ export default function App() {
   }, [route]);
 
   const renderRoute = () => {
+    if (route.startsWith('/invite/')) {
+      const inviteCode = route.split('/invite/')[1];
+      return <InviteLandingPage inviteCode={inviteCode} />;
+    }
     if (route === '/register') {
       return <RegisterPage />;
     }

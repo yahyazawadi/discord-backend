@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import SideNavbar from './SideNavbar';
 import DMSidebar from './DMSidebar';
+import ServerSidebar from './ServerSidebar';
 import ChatArea from './ChatArea';
 import UserProfilePanel from './UserProfilePanel';
+import ServerProfilePanel from './ServerProfilePanel';
 import DiscoverArea from './DiscoverArea';
 import UserSettingsArea from './UserSettingsArea';
 import { connectSocket, disconnectSocket, getSocket } from '../../utils/socket';
@@ -17,13 +19,25 @@ interface IncomingCall {
 }
 
 export default function HomePage() {
-  const [activeId, setActiveId] = useState<string>('home');
+  const [activeId, setActiveId] = useState<string>(() => {
+    const saved = localStorage.getItem('selectedServerId');
+    if (saved) {
+      localStorage.removeItem('selectedServerId');
+      return saved;
+    }
+    return 'home';
+  });
   const [activeDmId, setActiveDmId] = useState<string | null>(null);
   const [activeDmName, setActiveDmName] = useState<string>('Katara');
   const [activeDmUserId, setActiveDmUserId] = useState<string | null>(null);
   const [activeDmAvatar, setActiveDmAvatar] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+
+  // States for active server channels
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [activeChannelName, setActiveChannelName] = useState<string>('general');
+  const [activeChannelType, setActiveChannelType] = useState<'text' | 'voice'>('text');
 
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [initialCallType, setInitialCallType] = useState<'audio' | 'video' | null>(null);
@@ -61,6 +75,10 @@ export default function HomePage() {
   const handleSelectSideItem = (id: string) => {
     setActiveId(id);
     setShowSettings(false); // Close settings when switching workspace context
+    if (id !== 'home' && id !== 'discover') {
+      setActiveChannelId(null);
+      setActiveDmUserId(null); // Hide direct message profile panel
+    }
   };
 
   const handleAcceptCall = () => {
@@ -92,31 +110,54 @@ export default function HomePage() {
         />
       ) : (
         <>
-          <DMSidebar
-            activeDmId={activeDmId}
-            onSelectDm={(id, name, userId, avatar) => {
-              setActiveDmId(id);
-              setActiveDmName(name);
-              setActiveDmUserId(userId || null);
-              setActiveDmAvatar(avatar || null);
-              setSidebarOpen(false);
-              setShowSettings(false); // Close settings when selecting DMs
-            }}
-            onOpenSettings={() => setShowSettings(true)}
-            open={sidebarOpen}
-          />
+          {activeId === 'home' ? (
+            <DMSidebar
+              activeDmId={activeDmId}
+              onSelectDm={(id, name, userId, avatar) => {
+                setActiveDmId(id);
+                setActiveDmName(name);
+                setActiveDmUserId(userId || null);
+                setActiveDmAvatar(avatar || null);
+                setSidebarOpen(false);
+                setShowSettings(false); // Close settings when selecting DMs
+              }}
+              onOpenSettings={() => setShowSettings(true)}
+              open={sidebarOpen}
+            />
+          ) : (
+            <ServerSidebar
+              serverId={activeId}
+              activeChannelId={activeChannelId}
+              onSelectChannel={(channelId, name, type) => {
+                setActiveChannelId(channelId);
+                setActiveChannelName(name);
+                setActiveChannelType(type);
+                setSidebarOpen(false);
+                setShowSettings(false);
+              }}
+              onOpenSettings={() => setShowSettings(true)}
+              open={sidebarOpen}
+            />
+          )}
+
           {showSettings ? (
             <UserSettingsArea onClose={() => setShowSettings(false)} />
           ) : (
             <>
               <ChatArea 
-                conversationId={activeDmId} 
-                recipientName={activeDmName} 
-                recipientAvatar={activeDmAvatar}
-                initialCallType={initialCallType}
+                conversationId={activeId === 'home' ? activeDmId : null} 
+                channelId={activeId === 'home' ? null : activeChannelId}
+                recipientName={activeId === 'home' ? activeDmName : activeChannelName} 
+                recipientAvatar={activeId === 'home' ? activeDmAvatar : null}
+                initialCallType={activeId === 'home' ? initialCallType : null}
                 onClearInitialCallType={() => setInitialCallType(null)}
+                isVoice={activeId !== 'home' && activeChannelType === 'voice'}
               />
-              <UserProfilePanel userId={activeDmUserId} />
+              {activeId === 'home' ? (
+                <UserProfilePanel userId={activeDmUserId} />
+              ) : (
+                <ServerProfilePanel serverId={activeId} />
+              )}
             </>
           )}
         </>
@@ -146,3 +187,4 @@ export default function HomePage() {
     </div>
   );
 }
+

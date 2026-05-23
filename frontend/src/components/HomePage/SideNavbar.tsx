@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getSocket } from '../../utils/socket';
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? `http://${window.location.hostname}:5001/api`
@@ -112,6 +113,33 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
   useEffect(() => {
     fetchServers();
   }, []);
+
+  // Listen for real-time kick/ban eviction events
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userId = user._id;
+    if (!userId) return;
+
+    const socket = getSocket();
+    const handleUserRemoved = (data: { serverId: string; userId: string; action: string }) => {
+      console.log('[SideNavbar] user_removed_from_server event received:', data);
+      if (data.userId === userId) {
+        // Remove the server from local servers list
+        setServers(prev => prev.filter(s => s._id !== data.serverId));
+        // If this server is currently active/selected, clear it
+        if (activeId === data.serverId) {
+          setActiveId('');
+          localStorage.removeItem('activeServerId');
+          localStorage.removeItem('activeChannelId');
+        }
+      }
+    };
+
+    socket.on('user_removed_from_server', handleUserRemoved);
+    return () => {
+      socket.off('user_removed_from_server', handleUserRemoved);
+    };
+  }, [activeId, setActiveId]);
 
   // Pre-fill suggested name
   useEffect(() => {

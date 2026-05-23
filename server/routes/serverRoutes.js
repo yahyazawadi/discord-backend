@@ -20,6 +20,7 @@ import {
   deleteServer,
   promoteToAdmin,
   demoteAdmin,
+  getServerByInviteCode,
 } from '../controllers/serverController.js';
 import { protect, optionalAuth } from '../middleware/auth.js';
 
@@ -35,6 +36,9 @@ router.post('/invite', protect, generateServerInvite);
 
 // Invite-code join endpoint
 router.post('/join/:inviteCode', protect, joinServerByInvite);
+
+// Invite details public endpoint
+router.get('/invite-details/:inviteCode', getServerByInviteCode);
 
 // Specific server detail and join/leave/moderation endpoints
 router.get('/:serverId', optionalAuth, getServerDetails);

@@ -58,7 +58,7 @@ const formatReactions = (reactions, userId, isServerAdminOrOwner) => {
 /**
  * Format message to enforce anonymous stripping of the sender and reactors.
  */
-const formatMessage = (msg, userId, isServerAdminOrOwner) => {
+const formatMessage = (msg, userId, isServerAdminOrOwner, memberNicknames = {}) => {
   if (!msg) return msg;
   const msgObj = msg.toObject ? msg.toObject() : msg;
   
@@ -67,10 +67,18 @@ const formatMessage = (msg, userId, isServerAdminOrOwner) => {
   }
 
   if (msgObj.parentMessage) {
-    msgObj.parentMessage = formatMessage(msgObj.parentMessage, userId, isServerAdminOrOwner);
+    msgObj.parentMessage = formatMessage(msgObj.parentMessage, userId, isServerAdminOrOwner, memberNicknames);
   }
   
   if (msgObj.isSystem || !msgObj.isAnonymous) {
+    if (msgObj.sender) {
+      const senderId = msgObj.sender._id ? msgObj.sender._id.toString() : msgObj.sender.toString();
+      if (memberNicknames[senderId]) {
+        if (msgObj.sender._id) {
+          msgObj.sender.displayName = memberNicknames[senderId];
+        }
+      }
+    }
     return msgObj;
   }
   
@@ -78,6 +86,10 @@ const formatMessage = (msg, userId, isServerAdminOrOwner) => {
   const isSender = senderId && senderId.toString() === userId.toString();
   
   if (isSender || isServerAdminOrOwner) {
+    // If anonymous but it is the sender or admin, also resolve their server nickname if desired, but keep standard details
+    if (msgObj.sender && msgObj.sender._id && memberNicknames[senderId]) {
+      msgObj.sender.displayName = memberNicknames[senderId];
+    }
     return msgObj;
   } else {
     return {
@@ -169,7 +181,17 @@ export const getChannelMessages = async (req, res) => {
         populate: { path: 'sender', select: '_id username displayName avatar' }
       });
 
-    const formatted = messages.map((msg) => formatMessage(msg, req.user._id, isServerAdminOrOwner));
+    // Build member nicknames lookup map
+    const memberNicknames = {};
+    if (server && server.members) {
+      server.members.forEach((m) => {
+        if (m.user && m.nickname) {
+          memberNicknames[m.user.toString()] = m.nickname;
+        }
+      });
+    }
+
+    const formatted = messages.map((msg) => formatMessage(msg, req.user._id, isServerAdminOrOwner, memberNicknames));
 
     res.status(200).json({ success: true, messages: formatted });
   } catch (error) {
@@ -425,7 +447,17 @@ export const searchMessages = async (req, res) => {
         populate: { path: 'sender', select: '_id username displayName avatar' }
       });
 
-    const formatted = results.map((msg) => formatMessage(msg, req.user._id, isServerAdminOrOwner));
+    // Build member nicknames lookup map
+    const memberNicknames = {};
+    if (channelId && server && server.members) {
+      server.members.forEach((m) => {
+        if (m.user && m.nickname) {
+          memberNicknames[m.user.toString()] = m.nickname;
+        }
+      });
+    }
+
+    const formatted = results.map((msg) => formatMessage(msg, req.user._id, isServerAdminOrOwner, memberNicknames));
 
     res.status(200).json({ success: true, messages: formatted });
   } catch (error) {

@@ -976,3 +976,35 @@ export const exploreServers = async (req, res) => {
   }
 };
 
+/**
+ * Fetch server summary by invite code (Public endpoint)
+ * GET /api/servers/invite-details/:inviteCode
+ */
+export const getServerByInviteCode = async (req, res) => {
+  try {
+    const inviteCode = req.params.inviteCode.toUpperCase();
+    const server = await Server.findOne({ inviteCode })
+      .select('name icon banner description owner members')
+      .populate('owner', '_id username displayName avatar');
+
+    if (!server) {
+      return res.status(404).json({ success: false, error: 'Invalid invite code' });
+    }
+
+    res.status(200).json({
+      success: true,
+      server: {
+        _id: server._id,
+        name: server.name,
+        icon: server.icon,
+        banner: server.banner,
+        description: server.description,
+        owner: server.owner,
+        totalMembers: server.members.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+

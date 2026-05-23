@@ -109,6 +109,35 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
     });
   }, [connectToUser]);
 
+  const cleanupStaleSession = useCallback((userId: string, newPeerId: string) => {
+    const oldInfo = peerInfoRef.current.get(userId);
+    if (oldInfo && oldInfo.peerId !== newPeerId) {
+      console.log("[Voice] Stale session detected for user", userId, "oldPeerId:", oldInfo.peerId);
+      const oldCall = callsRef.current.get(oldInfo.peerId);
+      if (oldCall) {
+        try { oldCall.close(); } catch(_){}
+        callsRef.current.delete(oldInfo.peerId);
+      }
+      peerIdToInfoRef.current.delete(oldInfo.peerId);
+    }
+  }, []);
+
+  const initiateConnectionFlow = useCallback((p: VoiceParticipant) => {
+    // If we have video, we call immediately.
+    // If we don't, we wait 1.5 seconds to let them call us first (if they have video).
+    const hasLocalVideo = outgoingRef.current && outgoingRef.current.getVideoTracks().length > 0;
+    if (hasLocalVideo) {
+      connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
+    } else {
+      console.log("[Voice] Delaying outgoing call to allow video exchange:", p.displayName);
+      setTimeout(() => {
+        if (peerRef.current && !callsRef.current.has(p.peerId)) {
+          connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
+        }
+      }, 1500);
+    }
+  }, [connectToUser]);
+
   const leaveChannel = useCallback(() => {
     callsRef.current.forEach(c => closeCall(c));
     callsRef.current.clear();
@@ -199,19 +228,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         // Drain buffered participants (arrived before peer was ready)
         const buffered = pendingRef.current.slice();
         pendingRef.current = [];
-        buffered.forEach(p => {
-          const hasLocalVideo = outgoingRef.current && outgoingRef.current.getVideoTracks().length > 0;
-          if (hasLocalVideo) {
-            connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
-          } else {
-            console.log("[Voice] Delaying call to buffered peer to allow video exchange:", p.displayName);
-            setTimeout(() => {
-              if (peerRef.current && !callsRef.current.has(p.peerId)) {
-                connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
-              }
-            }, 1500);
-          }
-        });
+        buffered.forEach(p => initiateConnectionFlow(p));
       });
     };
 
@@ -230,17 +247,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       if (cId !== channelId) return;
       console.log("[Voice] voice_room_participants:", existing.length, "peers");
       existing.forEach((p: VoiceParticipant) => {
-        // Clean up any old call/session for this user if their peerId has changed
-        const oldInfo = peerInfoRef.current.get(p.userId);
-        if (oldInfo && oldInfo.peerId !== p.peerId) {
-          console.log("[Voice] Rejoin detected in participant list. Cleaning up old session:", oldInfo.peerId);
-          const oldCall = callsRef.current.get(oldInfo.peerId);
-          if (oldCall) {
-            try { oldCall.close(); } catch(_){}
-            callsRef.current.delete(oldInfo.peerId);
-          }
-          peerIdToInfoRef.current.delete(oldInfo.peerId);
-        }
+        cleanupStaleSession(p.userId, p.peerId);
 
         peerInfoRef.current.set(p.userId, p);
         peerIdToInfoRef.current.set(p.peerId, p);
@@ -249,19 +256,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         if (!peerOpen) {
           if (!pendingRef.current.some(x => x.userId === p.userId)) pendingRef.current.push(p);
         } else {
-          // If we have video, we call immediately.
-          // If we don't, we wait 1.5 seconds to let them call us first (if they have video).
-          const hasLocalVideo = outgoingRef.current && outgoingRef.current.getVideoTracks().length > 0;
-          if (hasLocalVideo) {
-            connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
-          } else {
-            console.log("[Voice] Delaying outgoing call to allow video exchange:", p.displayName);
-            setTimeout(() => {
-              if (peerRef.current && !callsRef.current.has(p.peerId)) {
-                connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
-              }
-            }, 1500);
-          }
+          initiateConnectionFlow(p);
         }
       });
     };
@@ -272,17 +267,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       if (info.channelId !== channelId) return;
       console.log("[Voice] user_joined_voice:", info.displayName);
 
-      // Clean up any old call/session for this user if their peerId has changed
-      const oldInfo = peerInfoRef.current.get(info.userId);
-      if (oldInfo && oldInfo.peerId !== info.peerId) {
-        console.log("[Voice] Rejoin detected. Cleaning up old session:", oldInfo.peerId);
-        const oldCall = callsRef.current.get(oldInfo.peerId);
-        if (oldCall) {
-          try { oldCall.close(); } catch(_){}
-          callsRef.current.delete(oldInfo.peerId);
-        }
-        peerIdToInfoRef.current.delete(oldInfo.peerId);
-      }
+      cleanupStaleSession(info.userId, info.peerId);
 
       peerInfoRef.current.set(info.userId, info);
       peerIdToInfoRef.current.set(info.peerId, info);
@@ -299,9 +284,6 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         if (stream && peerRef.current && (peerRef.current as any).open) {
           connectToUser(info.peerId, stream, info);
         }
-      } else {
-        // NOTE: If we are audio-only, do not call them.
-        // The newly joining peer will initiate calls to us, preventing simultaneous double-calling.
       }
     };
 
@@ -325,7 +307,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       socket.off("user_joined_voice",       onUserJoinedVoice);
       socket.off("user_left_voice",         onUserLeftVoice);
     };
-  }, [socket, channelId, connectToUser, upsertParticipant]);
+  }, [socket, channelId, connectToUser, upsertParticipant, cleanupStaleSession, initiateConnectionFlow]);
 
   // ── controls ──────────────────────────────────────────────────────────────
 
