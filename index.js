@@ -718,7 +718,9 @@ io.on('connection', async (socket) => {
   });
 });
 
+server.listen(5001);
+
 // Export the HTTP server handler for Cloudflare Workers
-export default httpServerHandler(server);
+export default httpServerHandler({ port: 5001 });
 
 // Trigger hot reload after port 5001 release
