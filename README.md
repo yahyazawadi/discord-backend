@@ -66,3 +66,10 @@ Welcome to the Discord Clone system. This is a lightweight, high-performance, si
 * **Laser Screen Annotation Draw Engine**: Captures normalized coordinates relative to shared video streams and overlays real-time canvas drawings (laser pointers) across all active callers during reviews.
 * **Speaking Indicators Glowing Ring**: Web Audio API frequency analysis captures active speaker decibels instantly, adding a beautiful glowing ring around speaking participants with zero network latency.
 * **Anti-Feedback session broker**: Automatically mutes or terminates secondary sessions if a user joins the same voice channel from multiple devices close by.
+
+---
+
+### ☁️ 8. Cloudflare R2 Client-Side Direct Uploads
+* **Pre-Signed Client Upload Flow**: Performs direct `PUT` uploads of compressed WebP images, videos, and custom attachments directly to Cloudflare R2 storage, bypassing backend gateways for 0% server overhead.
+* **Stateful Attachment Drafts**: Elegant media preview lists in the input field supporting interactive deletion, size validation, and real-time upload progress indicators before dispatching.
+
