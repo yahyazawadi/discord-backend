@@ -6,7 +6,10 @@ compatibility_flags = [ "nodejs_compat" ]
 
 [vars]
 NODE_ENV = "production"
-
-# Note: Set your MONGODB_URI, JWT_SECRET, CLIENT_URL, R2 credentials, GIPHY_API_KEY, 
-# and SMTP credentials as Environment Variables in the Cloudflare Dashboard, or via
-# wrangler secret put <SECRET_NAME> to keep them secure.
+CLIENT_URL = "http://localhost:3000"
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = "587"
+SMTP_USER = "super.yahyaaa@gmail.com"
+R2_ENDPOINT = "https://fe19d3afc8180ebd5792c34afb1f85af.r2.cloudflarestorage.com"
+R2_BUCKET_NAME = "discord"
+R2_PUBLIC_URL = "https://pub-e7047da4406c44fb8e93f1578db119fd.r2.dev"
