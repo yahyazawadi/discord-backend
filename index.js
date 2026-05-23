@@ -20,6 +20,21 @@ import { join } from 'path';
 
 dotenv.config();
 
+// --- Cloudflare Workers Environment Patch ---
+try {
+  const cfWorkers = await import('cloudflare:workers');
+  if (cfWorkers && cfWorkers.env) {
+    console.log('📦 [Env Patch] Cloudflare environment bindings detected. Syncing with process.env...');
+    for (const [key, value] of Object.entries(cfWorkers.env)) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        process.env[key] = String(value);
+      }
+    }
+  }
+} catch (e) {
+  console.log('ℹ️ [Env Patch] Running in non-Cloudflare environment. Using standard process.env.');
+}
+
 const app = express();
 const server = http.createServer(app);
 
@@ -93,6 +108,20 @@ if (process.env.NODE_ENV !== 'production') {
 let dbConnectionPromise = null;
 
 const ensureDbConnected = async (req, res, next) => {
+  // Sync Cloudflare environment variables on request in case of lazy initialization
+  try {
+    const cfWorkers = await import('cloudflare:workers');
+    if (cfWorkers && cfWorkers.env) {
+      for (const [key, value] of Object.entries(cfWorkers.env)) {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          process.env[key] = String(value);
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore on non-Cloudflare environments
+  }
+
   const readyState = mongoose.connection.readyState;
   console.log(`📡 [DB Middleware] Request: ${req.method} ${req.path} | Connection State: ${readyState}`);
   
