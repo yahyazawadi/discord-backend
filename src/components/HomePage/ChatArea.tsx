@@ -128,13 +128,7 @@ const VoiceFeed = ({ participant, isLocal, isDeafened }: { participant: any; isL
           ref={audioRef}
           autoPlay
           playsInline
-          style={{
-            position: 'absolute',
-            width: '1px',
-            height: '1px',
-            opacity: 0,
-            pointerEvents: 'none'
-          }}
+          controls={false}
         />
       )}
       <div className="participant-fallback-avatar">

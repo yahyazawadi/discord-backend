@@ -17,6 +17,21 @@ interface Props { channelId: string | null; socket: any; enabled?: boolean; call
 const stopStream = (s: MediaStream | null) => { try { s?.getTracks().forEach(t => { try { t.stop(); } catch(_){} }); } catch(_){} };
 const closeCall  = (c: MediaConnection | null) => { try { c?.close(); } catch(_){} };
 
+const createSilentAudioStream = (): MediaStream => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const dst = ctx.createMediaStreamDestination();
+    oscillator.connect(dst);
+    oscillator.start();
+    const stream = dst.stream;
+    stream.getAudioTracks().forEach(t => { t.enabled = false; });
+    return stream;
+  } catch (e) {
+    return new MediaStream();
+  }
+};
+
 const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio" }: Props) => {
   const [localStream,     setLocalStream]     = useState<MediaStream | null>(null);
   const [participants,    setParticipants]    = useState<VoiceParticipant[]>([]);
@@ -70,9 +85,10 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
    * The ONLY place a call is created.
    * Rule: if a connection to this peerId already exists in callsRef, skip — no duplicates.
    */
-  const connectToUser = useCallback((peerId: string, stream: MediaStream, info: VoiceParticipant) => {
+  const connectToUser = useCallback((peerId: string, stream: MediaStream | undefined, info: VoiceParticipant) => {
     const peer = peerRef.current;
-    if (!peer || !stream) return;
+    const activeStream = stream || outgoingRef.current || localRef.current || createSilentAudioStream();
+    if (!peer || !activeStream) return;
 
     // Already connected — do nothing
     if (callsRef.current.has(peerId)) {
@@ -86,7 +102,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
     upsertParticipant(info);
 
     try {
-      const call = peer.call(peerId, stream);
+      const call = peer.call(peerId, activeStream);
       if (!call) { console.warn("[Voice] peer.call() returned null"); return; }
       callsRef.current.set(peerId, call);
 
@@ -199,8 +215,10 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (e: any) {
         if (cancelled) return;
-        setError(e.name === "NotAllowedError" ? "Microphone/Camera access denied." : `Media error: ${e.message}`);
-        setIsConnecting(false); return;
+        console.warn("[Voice] getUserMedia failed, using silent fallback stream. Reason:", e.message);
+        // Fallback to silent stream so users without mics or with denied permissions can still join
+        stream = createSilentAudioStream();
+        setError(e.name === "NotAllowedError" ? "Muted: Microphone/Camera access denied." : `Muted: ${e.message}`);
       }
       if (cancelled) { stopStream(stream); return; }
 
@@ -227,7 +245,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       // Rule: if we already have a connection to this peer, drop the duplicate.
       // Otherwise answer and register in callsRef — same as outgoing connections.
       peer.on("call", incoming => {
-        if (cancelled || !localRef.current) { closeCall(incoming); return; }
+        if (cancelled) { closeCall(incoming); return; }
 
         if (callsRef.current.has(incoming.peer)) {
           console.log("[Voice] Duplicate call from", incoming.peer, "— dropping");
@@ -236,7 +254,8 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         }
 
         console.log("[Voice] Answering call from", incoming.peer);
-        incoming.answer(outgoingRef.current || localRef.current!);
+        const ansStream = outgoingRef.current || localRef.current || createSilentAudioStream();
+        incoming.answer(ansStream);
         callsRef.current.set(incoming.peer, incoming);
 
         incoming.on("stream", remote => {
