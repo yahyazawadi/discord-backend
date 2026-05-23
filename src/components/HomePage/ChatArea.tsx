@@ -106,25 +106,51 @@ const VoiceFeed = ({ participant, isLocal, isDeafened }: { participant: any; isL
   const avatar = participant.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${participant.username}`;
 
   useEffect(() => {
-    if (isLocal || !participant.stream) return;
+    if (isLocal) {
+      console.log("[VoiceFeed] Skipping audio playback for local participant:", participant.displayName || participant.username);
+      return;
+    }
+    if (!participant.stream) {
+      console.warn("[VoiceFeed] No audio stream available yet for participant:", participant.displayName || participant.username);
+      return;
+    }
 
-    console.log(`[VoiceFeed] Playing remote audio for ${participant.displayName || participant.username} via dynamic Audio`);
+    const audioTracks = participant.stream.getAudioTracks();
+    console.log(`[VoiceFeed] Attempting to play audio for remote participant: ${participant.displayName || participant.username}`, {
+      peerId: participant.peerId,
+      streamId: participant.stream.id,
+      streamActive: participant.stream.active,
+      isDeafened,
+      audioTracksCount: audioTracks.length,
+      audioTracks: audioTracks.map((t: any) => ({ id: t.id, enabled: t.enabled, readyState: t.readyState }))
+    });
+
     const audio = new Audio();
     audio.srcObject = participant.stream;
     audio.volume = 1.0;
     audio.muted = !!isDeafened;
 
-    audio.play().catch((err) => {
-      console.warn('[VoiceFeed] audio autoplay blocked, retrying on interaction:', err);
-      const retry = () => { audio.play().catch(() => {}); document.removeEventListener('click', retry); };
-      document.addEventListener('click', retry, { once: true });
-    });
+    audio.play()
+      .then(() => {
+        console.log(`[VoiceFeed] Success: Audio playback successfully started for ${participant.displayName || participant.username}`);
+      })
+      .catch((err) => {
+        console.warn(`[VoiceFeed] Warning: Autoplay blocked for ${participant.displayName || participant.username}, error details:`, err);
+        const retry = () => {
+          console.log(`[VoiceFeed] Retrying autoplay for ${participant.displayName || participant.username} on user click gesture...`);
+          audio.play()
+            .then(() => console.log(`[VoiceFeed] Success: Audio playback started on click for ${participant.displayName || participant.username}`))
+            .catch((e) => console.error(`[VoiceFeed] Failure: Click-retry play failed for ${participant.displayName || participant.username}:`, e));
+        };
+        document.addEventListener('click', retry, { once: true });
+      });
 
     return () => {
+      console.log(`[VoiceFeed] Cleaning up audio playback for ${participant.displayName || participant.username}`);
       audio.pause();
       audio.srcObject = null;
     };
-  }, [participant.stream, isLocal, isDeafened]);
+  }, [participant.stream, isLocal, isDeafened, participant.displayName, participant.username, participant.peerId]);
 
   return (
     <div className="participant-card">

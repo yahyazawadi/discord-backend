@@ -68,15 +68,28 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
 
   // Attach a remote stream synchronously when it arrives
   const attachStream = useCallback((peerId: string, remote: MediaStream) => {
-    console.log("[Voice] Attaching stream synchronously for peerId:", peerId);
+    const audioTracks = remote.getAudioTracks();
+    console.log("[Voice] Attaching stream synchronously for peerId:", peerId, {
+      id: remote.id,
+      active: remote.active,
+      audioTracksCount: audioTracks.length,
+      audioTracks: audioTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState }))
+    });
     setParticipants(prev => {
       const idx = prev.findIndex(p => p.peerId === peerId);
       if (idx !== -1) {
-        if (prev[idx].stream === remote) return prev;
+        if (prev[idx].stream === remote) {
+          console.log("[Voice] Stream object is already identical for peerId:", peerId);
+          return prev;
+        }
         return prev.map((p, i) => (i === idx ? { ...p, stream: remote } : p));
       }
       const info = peerIdToInfoRef.current.get(peerId);
-      if (info) return [...prev, { ...info, stream: remote }];
+      if (info) {
+        console.log("[Voice] Found mapping info for peerId:", peerId, info.displayName);
+        return [...prev, { ...info, stream: remote }];
+      }
+      console.warn("[Voice] Mapping info not found for peerId:", peerId, "creating default participant");
       return [...prev, { userId: peerId, peerId, username: "Unknown", displayName: "Unknown", avatar: null, stream: remote }];
     });
   }, []);
@@ -88,7 +101,10 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
   const connectToUser = useCallback((peerId: string, stream: MediaStream | undefined, info: VoiceParticipant) => {
     const peer = peerRef.current;
     const activeStream = stream || outgoingRef.current || localRef.current || createSilentAudioStream();
-    if (!peer || !activeStream) return;
+    if (!peer || !activeStream) {
+      console.warn("[Voice] Cannot connectToUser: peer or activeStream is null/undefined", { peer: !!peer, activeStream: !!activeStream });
+      return;
+    }
 
     // Already connected — do nothing
     if (callsRef.current.has(peerId)) {
@@ -96,7 +112,13 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       return;
     }
 
-    console.log("[Voice] Connecting to", peerId, info.displayName);
+    const txTracks = activeStream.getAudioTracks();
+    console.log("[Voice] Connecting to", peerId, info.displayName, {
+      txStreamId: activeStream.id,
+      txActive: activeStream.active,
+      txTracksCount: txTracks.length,
+      txTracks: txTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState }))
+    });
     peerInfoRef.current.set(info.userId, info);
     peerIdToInfoRef.current.set(peerId, info);
     upsertParticipant(info);
@@ -107,11 +129,24 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       callsRef.current.set(peerId, call);
 
       call.on("stream", remote => {
-        console.log("[Voice] Remote stream received from", peerId);
+        const rxTracks = remote.getAudioTracks();
+        console.log("[Voice] Remote stream received from", peerId, {
+          rxStreamId: remote.id,
+          rxActive: remote.active,
+          rxTracksCount: rxTracks.length,
+          rxTracks: rxTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState }))
+        });
         attachStream(peerId, remote);
       });
-      call.on("close", () => { callsRef.current.delete(peerId); setParticipants(prev => prev.filter(p => p.peerId !== peerId)); });
-      call.on("error", () => { callsRef.current.delete(peerId); });
+      call.on("close", () => {
+        console.log("[Voice] Call closed with peerId:", peerId);
+        callsRef.current.delete(peerId);
+        setParticipants(prev => prev.filter(p => p.peerId !== peerId));
+      });
+      call.on("error", (err) => {
+        console.error("[Voice] Call error with peerId:", peerId, err);
+        callsRef.current.delete(peerId);
+      });
     } catch (e) { console.error("[Voice] connectToUser error:", e); }
   }, [upsertParticipant, attachStream]);
 
@@ -240,7 +275,11 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       // Rule: if we already have a connection to this peer, drop the duplicate.
       // Otherwise answer and register in callsRef — same as outgoing connections.
       peer.on("call", incoming => {
-        if (cancelled) { closeCall(incoming); return; }
+        if (cancelled) {
+          console.log("[Voice] Incoming call received but hook is cancelled — dropping");
+          closeCall(incoming);
+          return;
+        }
 
         if (callsRef.current.has(incoming.peer)) {
           console.log("[Voice] Duplicate call from", incoming.peer, "— dropping");
@@ -248,17 +287,36 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
           return;
         }
 
-        console.log("[Voice] Answering call from", incoming.peer);
         const ansStream = outgoingRef.current || localRef.current || createSilentAudioStream();
+        const ansTracks = ansStream.getAudioTracks();
+        console.log("[Voice] Answering incoming call from", incoming.peer, {
+          ansStreamId: ansStream.id,
+          ansActive: ansStream.active,
+          ansTracksCount: ansTracks.length,
+          ansTracks: ansTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState }))
+        });
         incoming.answer(ansStream);
         callsRef.current.set(incoming.peer, incoming);
 
         incoming.on("stream", remote => {
-          console.log("[Voice] Remote stream received (answer) from", incoming.peer);
+          const rxTracks = remote.getAudioTracks();
+          console.log("[Voice] Remote stream received (answer callback) from", incoming.peer, {
+            rxStreamId: remote.id,
+            rxActive: remote.active,
+            rxTracksCount: rxTracks.length,
+            rxTracks: rxTracks.map(t => ({ id: t.id, enabled: t.enabled, readyState: t.readyState }))
+          });
           attachStream(incoming.peer, remote);
         });
-        incoming.on("close", () => { callsRef.current.delete(incoming.peer); setParticipants(prev => prev.filter(p => p.peerId !== incoming.peer)); });
-        incoming.on("error", () => { callsRef.current.delete(incoming.peer); });
+        incoming.on("close", () => {
+          console.log("[Voice] Answer call closed for peerId:", incoming.peer);
+          callsRef.current.delete(incoming.peer);
+          setParticipants(prev => prev.filter(p => p.peerId !== incoming.peer));
+        });
+        incoming.on("error", (err) => {
+          console.error("[Voice] Answer call error for peerId:", incoming.peer, err);
+          callsRef.current.delete(incoming.peer);
+        });
       });
 
       peer.on("open", assignedId => {
