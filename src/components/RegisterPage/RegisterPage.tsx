@@ -15,7 +15,6 @@ export default function RegisterPage() {
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState(1); // 1 = Register Form, 2 = OTP Verification
   const [loading, setLoading] = useState(false);
-  const [wakingUp, setWakingUp] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [sentOtp, setSentOtp] = useState('');
