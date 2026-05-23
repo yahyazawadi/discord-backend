@@ -8,6 +8,7 @@ import ServerProfilePanel from './ServerProfilePanel';
 import DiscoverArea from './DiscoverArea';
 import UserSettingsArea from './UserSettingsArea';
 import { connectSocket, disconnectSocket, getSocket } from '../../utils/socket';
+import { Phone, PhoneOff } from '../Icons';
 import './HomePage.css';
 
 interface IncomingCall {
@@ -41,6 +42,12 @@ export default function HomePage() {
 
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [initialCallType, setInitialCallType] = useState<'audio' | 'video' | null>(null);
+  // Triggered by UserProfilePanel call buttons -> forwarded to ChatArea
+  const [pendingProfileCallType, setPendingProfileCallType] = useState<'audio' | 'video' | null>(null);
+
+  const handleStartCallFromProfile = (type: 'audio' | 'video') => {
+    setPendingProfileCallType(type);
+  };
 
   // Initialize and maintain stable socket connection on page load, and handle call signaling
   useEffect(() => {
@@ -114,10 +121,16 @@ export default function HomePage() {
             <DMSidebar
               activeDmId={activeDmId}
               onSelectDm={(id, name, userId, avatar) => {
-                setActiveDmId(id);
-                setActiveDmName(name);
-                setActiveDmUserId(userId || null);
-                setActiveDmAvatar(avatar || null);
+                if (activeDmId === id) {
+                  // Clicked active DM again: toggle profile panel visibility
+                  setActiveDmUserId((prev) => (prev ? null : (userId || null)));
+                } else {
+                  // Clicked a different DM: select and display profile
+                  setActiveDmId(id);
+                  setActiveDmName(name);
+                  setActiveDmUserId(userId || null);
+                  setActiveDmAvatar(avatar || null);
+                }
                 setSidebarOpen(false);
                 setShowSettings(false); // Close settings when selecting DMs
               }}
@@ -149,12 +162,14 @@ export default function HomePage() {
                 channelId={activeId === 'home' ? null : activeChannelId}
                 recipientName={activeId === 'home' ? activeDmName : activeChannelName} 
                 recipientAvatar={activeId === 'home' ? activeDmAvatar : null}
-                initialCallType={activeId === 'home' ? initialCallType : null}
-                onClearInitialCallType={() => setInitialCallType(null)}
+                initialCallType={activeId === 'home' ? (pendingProfileCallType || initialCallType) : null}
+                onClearInitialCallType={() => { setInitialCallType(null); setPendingProfileCallType(null); }}
                 isVoice={activeId !== 'home' && activeChannelType === 'voice'}
               />
               {activeId === 'home' ? (
-                <UserProfilePanel userId={activeDmUserId} />
+                <UserProfilePanel userId={activeDmUserId} onStartCall={activeDmId ? handleStartCallFromProfile : undefined} />
+              ) : activeChannelType === 'voice' && activeChannelId ? (
+                null
               ) : (
                 <ServerProfilePanel serverId={activeId} />
               )}
@@ -176,10 +191,10 @@ export default function HomePage() {
           <div className="incoming-call-label">Incoming {incomingCall.type === 'video' ? 'video' : 'voice'} call...</div>
           <div className="incoming-call-actions">
             <button className="incoming-call-btn incoming-call-btn--accept" onClick={handleAcceptCall}>
-              📞 Accept
+              <Phone size={14} color="#fff" /> Accept
             </button>
             <button className="incoming-call-btn incoming-call-btn--decline" onClick={handleDeclineCall}>
-              ❌ Decline
+              <PhoneOff size={14} color="#fff" /> Decline
             </button>
           </div>
         </div>

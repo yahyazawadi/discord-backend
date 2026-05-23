@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getSocket } from '../../utils/socket';
 
 import api from '../../utils/api';
+import { Cross, Warning } from '../Icons';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #e056fd 0%, #686de0 100%)',
@@ -483,7 +484,7 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
               onClick={() => setIsModalOpen(false)}
               aria-label="Close"
             >
-              ✕
+              <Cross size={14} />
             </button>
 
             {/* Header */}
@@ -502,9 +503,13 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
                 padding: '12px', 
                 color: '#ED4245', 
                 fontSize: '14px',
-                fontWeight: '500'
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '10px'
               }}>
-                ⚠️ {error}
+                <Warning size={16} color="#ED4245" /> {error}
               </div>
             )}
 

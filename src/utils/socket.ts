@@ -20,6 +20,7 @@ export const getSocket = (): Socket => {
 
   // Setup connection logging for stability monitoring
   socket.on('connect', () => {
+    (window as any).__firstConnectionReached = true;
     console.log('⚡ Socket.io connected to server:', socket?.id);
   });
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 import api from '../../utils/api';
+import { Cross, Warning, Spinner } from '../Icons';
 
 export type StatusType = 'online' | 'idle' | 'dnd' | 'offline' | 'streaming' | 'mobile';
 
@@ -304,8 +305,6 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
             border: '2px solid #8E9297',
             background: 'transparent',
             color: '#8E9297',
-            fontSize: '12px',
-            fontWeight: 'bold',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -321,7 +320,7 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
             e.currentTarget.style.background = 'transparent';
           }}
         >
-          ✕
+          <Cross size={14} />
         </button>
         <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#8E9297', textTransform: 'uppercase' }}>ESC</span>
       </div>
@@ -347,16 +346,17 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
             justifyContent: 'space-between',
             boxSizing: 'border-box'
           }}>
-            <span>⚠️ {errorText}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Warning size={16} color="#ED4245" /> {errorText}
+            </span>
             <button 
               onClick={() => setErrorText('')}
               style={{
                 background: 'none', border: 'none', color: '#ED4245',
-                cursor: 'pointer', fontSize: '16px', fontWeight: 'bold',
-                lineHeight: 1
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}
             >
-              ✕
+              <Cross size={16} color="#ED4245" />
             </button>
           </div>
         )}
@@ -475,8 +475,8 @@ export default function UserSettingsArea({ onClose }: UserSettingsAreaProps) {
               }}>
                 {/* Upload Loading indicator */}
                 {savingSettings && (
-                  <div style={{ color: '#14AC7B', fontSize: '13px', fontWeight: '500' }}>
-                    ⏳ {uploadProgressText || 'Saving profile updates...'}
+                  <div style={{ color: '#14AC7B', fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Spinner size={16} color="#14AC7B" /> {uploadProgressText || 'Saving profile updates...'}
                   </div>
                 )}
 

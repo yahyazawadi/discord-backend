@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import api from '../../utils/api';
+import { Spinner, Warning } from '../Icons';
 
 interface InviteLandingPageProps {
   inviteCode: string;
@@ -116,7 +117,9 @@ export default function InviteLandingPage({ inviteCode }: InviteLandingPageProps
         color: '#8E9297',
         fontFamily: 'Inter, sans-serif'
       }}>
-        <div style={{ fontSize: '24px', marginBottom: '16px' }}>⏳</div>
+        <div style={{ marginBottom: '16px' }}>
+          <Spinner size={32} color="#14AC7B" />
+        </div>
         <div style={{ fontSize: '14px', letterSpacing: '0.5px' }}>Resolving invite link...</div>
       </div>
     );
@@ -136,7 +139,9 @@ export default function InviteLandingPage({ inviteCode }: InviteLandingPageProps
         padding: '20px',
         textAlign: 'center'
       }}>
-        <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
+        <div style={{ marginBottom: '20px' }}>
+          <Warning size={48} color="#ED4245" />
+        </div>
         <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#ED4245', margin: '0 0 10px' }}>Invalid Invite</h2>
         <p style={{ color: '#8E9297', fontSize: '14px', maxWidth: '320px', margin: '0 0 24px', lineHeight: '1.5' }}>
           {error}

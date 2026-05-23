@@ -256,7 +256,7 @@
 
 .dm-username {
   color: #8E9297;
-  font-family: 'FONTSPRING DEMO - Salvatore Book', 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
   font-size: 16px;
   font-weight: 300;
   white-space: nowrap;
@@ -340,7 +340,7 @@
 
 .dm-profile-name {
   color: #fff;
-  font-family: 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
   font-size: 14px;
   font-weight: 400;
   letter-spacing: -0.6px;
@@ -422,7 +422,7 @@
 
 .chat-header-name {
   color: #14AC7B;
-  font-family: 'FONTSPRING DEMO - Salvatore Bold', 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
   font-size: 14px;
   font-weight: 600;
 }
@@ -522,7 +522,7 @@
 
 .chat-message-author {
   color: #14AC7B;
-  font-family: 'FONTSPRING DEMO - Salvatore Bold', 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
   font-size: 14px;
   font-weight: 600;
   line-height: 1;
@@ -673,7 +673,7 @@
 
 .profile-panel-name {
   color: #E5F1F9;
-  font-family: 'FONTSPRING DEMO - Salvatore Bold', 'FONTSPRING DEMO - Salvatore', -apple-system, Roboto, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, Roboto, Helvetica, sans-serif;
   font-size: 20px;
   font-weight: 600;
   text-align: center;
@@ -1118,4 +1118,164 @@
 
 .category-header-wrap:hover .category-add-btn {
   opacity: 1;
+}
+
+/* Custom smooth animations for Find Conversation modal */
+@keyframes dmModalOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dmModalContentScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.dm-modal-overlay {
+  animation: dmModalOverlayFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity;
+}
+
+.dm-modal-content {
+  animation: dmModalContentScaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* ---------- Fullscreen Modes for Calling & Chat ---------- */
+
+/* Fullscreen participant card (HTML5 Fullscreen API) */
+.participant-card:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #000 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.participant-card:fullscreen .participant-video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important; /* show entire feed without cropping */
+  border-radius: 0 !important;
+}
+
+.participant-card:fullscreen .participant-name-badge {
+  bottom: 24px !important;
+  left: 24px !important;
+  font-size: 16px !important;
+  padding: 8px 16px !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+}
+
+.participant-card:fullscreen .video-fullscreen-btn {
+  top: 24px !important;
+  right: 24px !important;
+}
+
+/* Fullscreen voice chat pane */
+.voice-chat-pane:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #131A20 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+.voice-chat-pane:fullscreen .chat-messages-scroll {
+  flex: 1 !important;
+  padding: 20px 24px !important;
+}
+
+.voice-chat-pane:fullscreen .chat-input-bar {
+  padding: 16px 24px 24px 24px !important;
+}
+
+/* Webkit prefixes for fallback browser support */
+.participant-card:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #000 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.participant-card:-webkit-full-screen .participant-video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  border-radius: 0 !important;
+}
+
+.voice-chat-pane:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #131A20 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+/* ---------- Voice Layout Resize Handle ---------- */
+
+.voice-resize-handle {
+  height: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: ns-resize;
+  user-select: none;
+  z-index: 10;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.voice-resize-handle:hover {
+  background: rgba(20, 172, 123, 0.08);
+  border-top-color: rgba(20, 172, 123, 0.25);
+  border-bottom-color: rgba(20, 172, 123, 0.25);
+}
+
+.voice-resize-handle:hover .voice-resize-grip-bar {
+  background: rgba(20, 172, 123, 0.55) !important;
+}
+
+.voice-resize-handle:active {
+  background: rgba(20, 172, 123, 0.14);
+}
+
+.voice-resize-handle:active .voice-resize-grip-bar {
+  background: #14AC7B !important;
 }

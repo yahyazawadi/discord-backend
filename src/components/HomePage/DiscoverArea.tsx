@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 import api from '../../utils/api';
+import { Warning, Check } from '../Icons';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #e056fd 0%, #686de0 100%)',
@@ -182,8 +183,8 @@ export default function DiscoverArea({ onJoinServer }: DiscoverAreaProps) {
         </h2>
 
         {error && (
-          <div style={{ color: '#ED4245', fontSize: '15px', fontWeight: '500', marginBottom: '20px' }}>
-            ⚠️ {error}
+          <div style={{ color: '#ED4245', fontSize: '15px', fontWeight: '500', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Warning size={16} color="#ED4245" /> {error}
           </div>
         )}
 
@@ -316,7 +317,7 @@ export default function DiscoverArea({ onJoinServer }: DiscoverAreaProps) {
                           cursor: 'not-allowed'
                         }}
                       >
-                        ✓ Joined
+                        <Check size={14} color="#8E9297" /> Joined
                       </button>
                     ) : (
                       <button

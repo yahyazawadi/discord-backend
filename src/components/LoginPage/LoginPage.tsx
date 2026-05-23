@@ -4,6 +4,7 @@ import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './LoginPage.css';
 
 import api from '../../utils/api';
+import { Warning } from '../Icons';
 
 export default function LoginPage() {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -74,8 +75,8 @@ export default function LoginPage() {
 
           <form className="login-form" onSubmit={handleLoginSubmit}>
             {error && (
-              <div style={{ color: '#f23f43', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500' }}>
-                ⚠️ {error}
+              <div style={{ color: '#f23f43', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Warning size={16} color="#f23f43" /> {error}
               </div>
             )}
 

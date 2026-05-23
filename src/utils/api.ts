@@ -10,13 +10,40 @@ const api = axios.create({
   }
 });
 
-// Request Interceptor: Automatically inject Bearer JWT Token
+// Request Interceptor: Automatically inject Bearer JWT Token & Cache Lookup
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    const isFirstConnectionReached = (window as any).__firstConnectionReached;
+    const isGet = config.method?.toLowerCase() === 'get';
+    const isRelative = config.url && !config.url.startsWith('http://') && !config.url.startsWith('https://');
+
+    if (!isFirstConnectionReached && isGet && isRelative) {
+      const cacheKey = 'api_cache:' + config.url;
+      const cachedDataStr = localStorage.getItem(cacheKey);
+      if (cachedDataStr) {
+        try {
+          const cachedData = JSON.parse(cachedDataStr);
+          console.log(`📦 [API Cache] Serving cached data for ${config.url} before first socket connection.`);
+          config.adapter = () => {
+            return Promise.resolve({
+              data: cachedData,
+              status: 200,
+              statusText: 'OK',
+              headers: {},
+              config,
+            });
+          };
+        } catch (e) {
+          // Ignore parse errors and let the request proceed
+        }
+      }
+    }
+
     return config;
   },
   (error) => {
@@ -24,13 +51,52 @@ api.interceptors.request.use(
   }
 );
 
-// Response Interceptor: Catch authentication expiries (401)
+// Response Interceptor: Catch authentication expiries (401), cache success, and fallback on failure
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const { config } = response;
+    const isGet = config.method?.toLowerCase() === 'get';
+    const isRelative = config.url && !config.url.startsWith('http://') && !config.url.startsWith('https://');
+
+    if (isGet && isRelative) {
+      const cacheKey = 'api_cache:' + config.url;
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(response.data));
+      } catch (e) {
+        console.warn('⚡ [API Client] Failed to cache response in localStorage:', e);
+      }
+    }
+    return response;
+  },
   (error) => {
     if (error.response && error.response.status === 401) {
       console.warn('⚡ [API Client] Session expired (401 Unauthorized)');
     }
+
+    const config = error.config;
+    if (config && config.method?.toLowerCase() === 'get') {
+      const isRelative = config.url && !config.url.startsWith('http://') && !config.url.startsWith('https://');
+      if (isRelative) {
+        const cacheKey = 'api_cache:' + config.url;
+        const cachedDataStr = localStorage.getItem(cacheKey);
+        if (cachedDataStr) {
+          try {
+            const cachedData = JSON.parse(cachedDataStr);
+            console.warn(`⚠️ [API Client] Network failed for ${config.url}, falling back to stale cache data.`);
+            return Promise.resolve({
+              data: cachedData,
+              status: 200,
+              statusText: 'OK',
+              headers: error.response?.headers || {},
+              config,
+            });
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+
     return Promise.reject(error);
   }
 );

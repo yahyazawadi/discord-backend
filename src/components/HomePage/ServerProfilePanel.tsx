@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getSocket } from '../../utils/socket';
 import api from '../../utils/api';
+import { Spinner, Warning, Refresh, Door, Crown, Shield, User, UserMinus, Gavel } from '../Icons';
 
 interface ServerProfilePanelProps {
   serverId: string;
@@ -258,17 +259,19 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
 
   if (loading) {
     return (
-      <aside className="profile-panel" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <div style={{ color: '#8E9297', fontSize: '14px' }}>⏳ Loading server profile...</div>
+      <aside className="profile-panel" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+        <Spinner size={16} color="#14AC7B" />
+        <div style={{ color: '#8E9297', fontSize: '14px' }}>Loading server profile...</div>
       </aside>
     );
   }
-
+ 
   if (error || !serverDetails) {
     return (
-      <aside className="profile-panel" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <aside className="profile-panel" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+        <Warning size={16} color="#ED4245" />
         <div style={{ color: '#ED4245', fontSize: '14px', textAlign: 'center', padding: '20px' }}>
-          ❌ {error || 'Server details not found'}
+          {error || 'Server details not found'}
         </div>
       </aside>
     );
@@ -394,13 +397,16 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
                   fontSize: '11px',
                   padding: '6px',
                   cursor: 'pointer',
-                  textAlign: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
                   transition: 'all 0.2s'
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#14AC7B'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = '#8E9297'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; }}
               >
-                🔄 Generate New Invite Code
+                <Refresh size={12} /> Generate New Invite Code
               </button>
             )}
           </div>
@@ -463,12 +469,16 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
               fontSize: '12px',
               fontWeight: 'bold',
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
               transition: 'background 0.2s'
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.2)'}
             onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.1)'}
           >
-            🛑 Leave Server
+            <Door size={14} color="#ED4245" /> Leave Server
           </button>
         )}
 
@@ -479,25 +489,31 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
           {/* Owner Role Group */}
           {ownerMember && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#FAA61A', opacity: 0.8 }}>👑 Server Owner</span>
+              <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#FAA61A', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Crown size={12} color="#FAA61A" /> Server Owner
+              </span>
               <MemberRow key="owner" member={ownerMember} isOwner={isOwner} isModerator={isModerator} currentUserOwner={isOwner} onKick={handleKick} onBan={handleBan} onPromote={handlePromote} onDemote={handleDemote} serverOwnerId={serverDetails.owner._id} adminList={serverDetails.admins} />
             </div>
           )}
-
+ 
           {/* Admin Role Group */}
           {adminMembers.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#14AC7B', opacity: 0.8 }}>🛡️ Administrators ({adminMembers.length})</span>
+              <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#14AC7B', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Shield size={12} color="#14AC7B" /> Administrators ({adminMembers.length})
+              </span>
               {adminMembers.map((m) => (
                 <MemberRow key={m.user._id} member={m} isOwner={isOwner} isModerator={isModerator} currentUserOwner={isOwner} onKick={handleKick} onBan={handleBan} onPromote={handlePromote} onDemote={handleDemote} serverOwnerId={serverDetails.owner._id} adminList={serverDetails.admins} />
               ))}
             </div>
           )}
-
+ 
           {/* Regular Members Group */}
           {regularMembers.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#8E9297', opacity: 0.8 }}>👤 Members ({regularMembers.length})</span>
+              <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#8E9297', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <User size={12} color="#8E9297" /> Members ({regularMembers.length})
+              </span>
               {regularMembers.map((m) => (
                 <MemberRow key={m.user._id} member={m} isOwner={isOwner} isModerator={isModerator} currentUserOwner={isOwner} onKick={handleKick} onBan={handleBan} onPromote={handlePromote} onDemote={handleDemote} serverOwnerId={serverDetails.owner._id} adminList={serverDetails.admins} />
               ))}
@@ -657,19 +673,19 @@ const MemberRow = ({
             {/* Moderation kicks and bans */}
             <button
               onClick={(e) => { e.stopPropagation(); onKick(user._id, username); setShowMenu(false); }}
-              style={{ background: 'none', border: 'none', color: '#FAA61A', padding: '6px 8px', fontSize: '11px', cursor: 'pointer', textAlign: 'left', borderRadius: '4px' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+              style={{ background: 'none', border: 'none', color: '#FAA61A', padding: '6px 8px', fontSize: '11px', cursor: 'pointer', textAlign: 'left', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'}
               onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
             >
-              👞 Kick Member
+              <UserMinus size={14} color="#FAA61A" /> Kick Member
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onBan(user._id, username); setShowMenu(false); }}
-              style={{ background: 'none', border: 'none', color: '#ED4245', padding: '6px 8px', fontSize: '11px', cursor: 'pointer', textAlign: 'left', borderRadius: '4px' }}
+              style={{ background: 'none', border: 'none', color: '#ED4245', padding: '6px 8px', fontSize: '11px', cursor: 'pointer', textAlign: 'left', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}
               onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.1)'}
               onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
             >
-              🔨 Ban Member
+              <Gavel size={14} color="#ED4245" /> Ban Member
             </button>
           </div>
         </>

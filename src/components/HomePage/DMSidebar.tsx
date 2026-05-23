@@ -369,14 +369,14 @@ export default function DMSidebar({ activeDmId, onSelectDm, onOpenSettings, open
           style={{
             position: 'fixed',
             top: 0, left: 0, width: '100vw', height: '100vh',
-            background: 'rgba(9, 12, 15, 0.75)',
-            backdropFilter: 'blur(8px)',
+            background: 'rgba(9, 12, 15, 0.65)',
+            backdropFilter: 'blur(3px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 9999,
-            animation: 'fadeIn 0.2s ease'
+            zIndex: 9999
           }}
+          className="dm-modal-overlay"
           onClick={() => setIsSearchOpen(false)}
         >
           <div 
@@ -392,6 +392,7 @@ export default function DMSidebar({ activeDmId, onSelectDm, onOpenSettings, open
               color: '#fff',
               position: 'relative'
             }}
+            className="dm-modal-content"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

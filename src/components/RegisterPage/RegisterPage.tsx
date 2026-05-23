@@ -4,6 +4,7 @@ import FloatingParticles from '../FloatingParticles/FloatingParticles';
 import './RegisterPage.css';
 
 import api from '../../utils/api';
+import { Warning, Check } from '../Icons';
 
 export default function RegisterPage() {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -136,8 +137,8 @@ export default function RegisterPage() {
 
               <form className="register-form" onSubmit={handleRegisterSubmit} style={{ width: '100%' }}>
                 {error && (
-                  <div style={{ color: '#f23f43', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500' }}>
-                    ⚠️ {error}
+                  <div style={{ color: '#f23f43', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Warning size={16} color="#f23f43" /> {error}
                   </div>
                 )}
 
@@ -221,13 +222,13 @@ export default function RegisterPage() {
 
               <form className="register-form" onSubmit={handleVerifySubmit} style={{ width: '100%' }}>
                 {error && (
-                  <div style={{ color: '#f23f43', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500' }}>
-                    ⚠️ {error}
+                  <div style={{ color: '#f23f43', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Warning size={16} color="#f23f43" /> {error}
                   </div>
                 )}
                 {message && (
-                  <div style={{ color: '#23a55a', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500' }}>
-                    ✓ {message}
+                  <div style={{ color: '#23a55a', fontSize: '14px', width: '100%', marginBottom: '16px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Check size={16} color="#23a55a" /> {message}
                   </div>
                 )}
 

@@ -25,6 +25,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isConnecting,    setIsConnecting]    = useState(false);
   const [error,           setError]           = useState<string | null>(null);
+  const [isDeafened,      setIsDeafened]      = useState(false);
 
   const peerRef     = useRef<Peer | null>(null);
   const localRef    = useRef<MediaStream | null>(null);
@@ -164,10 +165,21 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
 
       let stream: MediaStream;
       try {
+        const audioConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          googEchoCancellation: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true,
+          googAudioMirroring: false,
+          googAutoGainControl: true
+        };
         const constraints: MediaStreamConstraints =
           callType === "video"
-            ? { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: true }
-            : { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false };
+            ? { audio: audioConstraints, video: true }
+            : { audio: audioConstraints, video: false };
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (e: any) {
         if (cancelled) return;
@@ -284,6 +296,14 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         if (stream && peerRef.current && (peerRef.current as any).open) {
           connectToUser(info.peerId, stream, info);
         }
+      } else {
+        // Fallback: proactively call the joiner after 3 seconds if connection has not been established from their side
+        setTimeout(() => {
+          if (peerRef.current && (peerRef.current as any).open && !callsRef.current.has(info.peerId)) {
+            console.log("[Voice] Fallback calling new joiner proactively:", info.displayName);
+            connectToUser(info.peerId, outgoingRef.current || localRef.current!, info);
+          }
+        }, 3000);
       }
     };
 
@@ -316,6 +336,37 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
     if (!t) return;
     t.enabled = !t.enabled;
     setIsMicOn(t.enabled);
+    window.dispatchEvent(new CustomEvent('voice-mute-synced', { detail: { isMuted: !t.enabled } }));
+  }, []);
+
+  // Sync mute/deafen from sidebar
+  useEffect(() => {
+    const handleMuteToggled = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail.isMuted === 'boolean') {
+        const shouldMicBeOn = !detail.isMuted;
+        setIsMicOn(shouldMicBeOn);
+        if (localRef.current) {
+          localRef.current.getAudioTracks().forEach(track => {
+            track.enabled = shouldMicBeOn;
+          });
+        }
+      }
+    };
+
+    const handleDeafenToggled = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail.isDeafened === 'boolean') {
+        setIsDeafened(detail.isDeafened);
+      }
+    };
+
+    window.addEventListener('voice-mute-toggled', handleMuteToggled);
+    window.addEventListener('voice-deafen-toggled', handleDeafenToggled);
+    return () => {
+      window.removeEventListener('voice-mute-toggled', handleMuteToggled);
+      window.removeEventListener('voice-deafen-toggled', handleDeafenToggled);
+    };
   }, []);
 
   const toggleCamera = useCallback(async () => {
@@ -361,8 +412,61 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       screenTrack.onended = () => stopScreenShare();
     } catch (e: any) { if (e.name !== "NotAllowedError") setError(`Screen share error: ${e.message}`); }
   }, [isScreenSharing, renegotiate, stopScreenShare]);
+  // Publish active voice channel participants to shared state
+  useEffect(() => {
+    if (!channelId || !enabled) {
+      if ((window as any).__activeVoiceState && (window as any).__activeVoiceState.channelId === channelId) {
+        (window as any).__activeVoiceState = null;
+        window.dispatchEvent(new CustomEvent('voice-users-updated'));
+      }
+      return;
+    }
 
-  return { localStream, participants, isMicOn, isCameraOn, isScreenSharing, isConnecting, error, toggleMic, toggleCamera, shareScreen, stopScreenShare, leaveChannel };
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const users = [];
+
+    // Add local user
+    users.push({
+      userId: currentUser._id,
+      username: currentUser.username,
+      displayName: currentUser.displayName || currentUser.username,
+      avatar: currentUser.avatar,
+      isMicOn,
+      isCameraOn,
+      isScreenSharing,
+      isDeafened,
+      isLocal: true
+    });
+
+    // Add remote participants
+    participants.forEach(p => {
+      const hasVideo = p.stream && p.stream.getVideoTracks().length > 0 && p.stream.getVideoTracks()[0].enabled;
+      const hasAudio = p.stream && p.stream.getAudioTracks().length > 0 && p.stream.getAudioTracks()[0].enabled;
+      users.push({
+        userId: p.userId,
+        username: p.username,
+        displayName: p.displayName,
+        avatar: p.avatar,
+        isMicOn: !!hasAudio,
+        isCameraOn: !!hasVideo,
+        isLocal: false
+      });
+    });
+
+    (window as any).__activeVoiceState = {
+      channelId,
+      users
+    };
+    window.dispatchEvent(new CustomEvent('voice-users-updated'));
+
+    return () => {
+      if ((window as any).__activeVoiceState && (window as any).__activeVoiceState.channelId === channelId) {
+        (window as any).__activeVoiceState = null;
+        window.dispatchEvent(new CustomEvent('voice-users-updated'));
+      }
+    };
+  }, [channelId, enabled, participants, isMicOn, isCameraOn, isScreenSharing, isDeafened]);
+  return { localStream, participants, isMicOn, isCameraOn, isScreenSharing, isConnecting, error, toggleMic, toggleCamera, shareScreen, stopScreenShare, leaveChannel, isDeafened };
 };
 
 export default useVoiceChannel;

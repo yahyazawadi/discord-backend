@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import api from '../../utils/api';
+import { Spinner, Warning, Bolt, Cross, Shield, User, UserMinus, Gavel, Door, Trash, Speaker } from '../Icons';
 
 interface ChannelType {
   _id: string;
@@ -51,6 +52,27 @@ export default function ServerSidebar({
   const [currentUser, setCurrentUser] = useState<any>(() => {
     return JSON.parse(localStorage.getItem('user') || '{}');
   });
+
+  const [activeVoiceState, setActiveVoiceState] = useState<any>(() => {
+    return (window as any).__activeVoiceState || null;
+  });
+
+  useEffect(() => {
+    const handleVoiceUsersUpdated = () => {
+      setActiveVoiceState((window as any).__activeVoiceState || null);
+    };
+    const handleMuteSynced = (e: Event) => {
+      const isMutedDetail = (e as CustomEvent).detail?.isMuted;
+      setIsMuted(isMutedDetail);
+    };
+
+    window.addEventListener('voice-users-updated', handleVoiceUsersUpdated);
+    window.addEventListener('voice-mute-synced', handleMuteSynced);
+    return () => {
+      window.removeEventListener('voice-users-updated', handleVoiceUsersUpdated);
+      window.removeEventListener('voice-mute-synced', handleMuteSynced);
+    };
+  }, []);
 
   // Calculate Admin and Owner permissions at the top level
   const isOwner = server?.owner?._id 
@@ -264,16 +286,18 @@ export default function ServerSidebar({
 
   if (loading) {
     return (
-      <aside className={`dm-sidebar${open ? ' dm-sidebar--open' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: '#8E9297', fontSize: '14px' }}>⏳ Loading channels...</div>
+      <aside className={`dm-sidebar${open ? ' dm-sidebar--open' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <Spinner size={16} color="#14AC7B" />
+        <div style={{ color: '#8E9297', fontSize: '14px' }}>Loading channels...</div>
       </aside>
     );
   }
 
   if (!server) {
     return (
-      <aside className={`dm-sidebar${open ? ' dm-sidebar--open' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: '#ED4245', fontSize: '14px' }}>❌ Server not found</div>
+      <aside className={`dm-sidebar${open ? ' dm-sidebar--open' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <Warning size={16} color="#ED4245" />
+        <div style={{ color: '#ED4245', fontSize: '14px' }}>Server not found</div>
       </aside>
     );
   }
@@ -454,45 +478,126 @@ export default function ServerSidebar({
                         cat.channels.map(channel => {
                           const isActive = activeChannelId === channel._id;
                           return (
-                            <div
-                              key={channel._id}
-                              onClick={() => onSelectChannel(channel._id, channel.name, channel.type)}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                background: isActive ? '#14AC7B' : 'transparent',
-                                color: isActive ? '#fff' : '#8E9297',
-                                fontWeight: isActive ? '600' : 'normal',
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isActive) {
-                                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                                  e.currentTarget.style.color = '#fff';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isActive) {
-                                  e.currentTarget.style.background = 'transparent';
-                                  e.currentTarget.style.color = '#8E9297';
-                                }
-                              }}
-                            >
-                              {channel.type === 'text' ? (
-                                <span style={{ fontSize: '18px', opacity: isActive ? 1 : 0.6, fontWeight: 'bold' }}>#</span>
-                              ) : (
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isActive ? 1 : 0.6 }}>
-                                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                                </svg>
+                            <div key={channel._id}>
+                              <div
+                                onClick={() => onSelectChannel(channel._id, channel.name, channel.type)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                  background: isActive ? '#14AC7B' : 'transparent',
+                                  color: isActive ? '#fff' : '#8E9297',
+                                  fontWeight: isActive ? '600' : 'normal',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isActive) {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                    e.currentTarget.style.color = '#fff';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isActive) {
+                                    e.currentTarget.style.background = 'transparent';
+                                    e.currentTarget.style.color = '#8E9297';
+                                  }
+                                }}
+                              >
+                                {channel.type === 'text' ? (
+                                  <span style={{ fontSize: '18px', opacity: isActive ? 1 : 0.6, fontWeight: 'bold' }}>#</span>
+                                ) : (
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isActive ? 1 : 0.6 }}>
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                  </svg>
+                                )}
+                                <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {channel.name}
+                                </span>
+                              </div>
+
+                              {/* Active users listed under voice channel */}
+                              {channel.type === 'voice' && activeVoiceState && activeVoiceState.channelId === channel._id && (
+                                <div style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '4px',
+                                  paddingLeft: '16px',
+                                  marginTop: '4px',
+                                  marginBottom: '8px'
+                                }}>
+                                  {activeVoiceState.users && activeVoiceState.users.map((user: any) => (
+                                    <div 
+                                      key={user.userId} 
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        background: 'rgba(255, 255, 255, 0.02)'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                        {user.avatar ? (
+                                          <img 
+                                            src={user.avatar} 
+                                            alt={user.displayName} 
+                                            style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} 
+                                          />
+                                        ) : (
+                                          <div style={{
+                                            width: '20px',
+                                            height: '20px',
+                                            borderRadius: '50%',
+                                            background: '#14AC7B',
+                                            color: '#fff',
+                                            fontSize: '11px',
+                                            fontWeight: 'bold',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                          }}>
+                                            {user.username ? user.username[0].toUpperCase() : 'U'}
+                                          </div>
+                                        )}
+                                        <span style={{
+                                          fontSize: '13px',
+                                          color: '#C7C9CB',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          maxWidth: '120px'
+                                        }}>
+                                          {user.displayName || user.username}
+                                        </span>
+                                      </div>
+
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {!user.isMicOn && (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#8E9297', flexShrink: 0 }}>
+                                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" opacity={0.5} />
+                                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" opacity={0.5} />
+                                            <line x1="12" y1="19" x2="12" y2="23" opacity={0.5} />
+                                            <line x1="8" y1="23" x2="16" y2="23" opacity={0.5} />
+                                            <line x1="3" y1="3" x2="21" y2="21" stroke="#14AC7B" strokeWidth="3.5" />
+                                          </svg>
+                                        )}
+                                        {user.isDeafened && (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#8E9297', flexShrink: 0 }}>
+                                            <path d="M3 18v-6a9 9 0 0 1 18 0v6" opacity={0.5} />
+                                            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" opacity={0.5} />
+                                            <line x1="3" y1="3" x2="21" y2="21" stroke="#14AC7B" strokeWidth="3.5" strokeLinecap="round" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
-                              <span style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {channel.name}
-                              </span>
                             </div>
                           );
                         })
@@ -592,7 +697,11 @@ export default function ServerSidebar({
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
             {/* Microphone toggle */}
             <button 
-              onClick={() => setIsMuted(prev => !prev)}
+              onClick={() => {
+                const nextMuted = !isMuted;
+                setIsMuted(nextMuted);
+                window.dispatchEvent(new CustomEvent('voice-mute-toggled', { detail: { isMuted: nextMuted } }));
+              }}
               style={{
                 background: 'none',
                 border: 'none',
@@ -631,7 +740,15 @@ export default function ServerSidebar({
 
             {/* Headphones deafen toggle */}
             <button 
-              onClick={() => setIsDeafened(prev => !prev)}
+              onClick={() => {
+                const nextDeafened = !isDeafened;
+                setIsDeafened(nextDeafened);
+                window.dispatchEvent(new CustomEvent('voice-deafen-toggled', { detail: { isDeafened: nextDeafened } }));
+                if (nextDeafened) {
+                  setIsMuted(true);
+                  window.dispatchEvent(new CustomEvent('voice-mute-toggled', { detail: { isMuted: true } }));
+                }
+              }}
               style={{
                 background: 'none',
                 border: 'none',
@@ -740,7 +857,7 @@ export default function ServerSidebar({
                 background: '#1E262F'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '20px' }}>⚡</span>
+                  <Bolt size={20} color="#FAA61A" />
                   <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>Server Settings & Actions</h3>
                 </div>
                 <button 
@@ -749,12 +866,13 @@ export default function ServerSidebar({
                     background: 'none',
                     border: 'none',
                     color: '#8E9297',
-                    fontSize: '18px',
                     cursor: 'pointer',
-                    fontWeight: 'bold'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
                   }}
                 >
-                  ✕
+                  <Cross size={18} color="#8E9297" />
                 </button>
               </div>
 
@@ -813,9 +931,9 @@ export default function ServerSidebar({
                         onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
                         onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                       >
-                        🛡️ Promote to Admin
+                        <Shield size={14} color="#fff" /> Promote to Admin
                       </button>
-
+ 
                       {/* Demote Admin */}
                       <button
                         onClick={() => handleAdminAction('demote')}
@@ -837,9 +955,9 @@ export default function ServerSidebar({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
                       >
-                        ⬇️ Demote Admin
+                        <User size={14} color="#fff" /> Demote Admin
                       </button>
-
+ 
                       {/* Kick Member */}
                       <button
                         onClick={() => handleAdminAction('kick')}
@@ -861,9 +979,9 @@ export default function ServerSidebar({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
                       >
-                        🪄 Kick Member
+                        <UserMinus size={14} color="#fff" /> Kick Member
                       </button>
-
+ 
                       {/* Ban Member */}
                       <button
                         onClick={() => handleAdminAction('ban')}
@@ -885,9 +1003,9 @@ export default function ServerSidebar({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.15)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.1)'}
                       >
-                        🔨 Ban Member
+                        <Gavel size={14} color="#ED4245" /> Ban Member
                       </button>
-
+ 
                       {/* Leave Server */}
                       <button
                         onClick={() => handleAdminAction('leave')}
@@ -909,9 +1027,9 @@ export default function ServerSidebar({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
                       >
-                        🚪 Leave Server
+                        <Door size={14} color="#E67E22" /> Leave Server
                       </button>
-
+ 
                       {/* Delete Server */}
                       <button
                         onClick={() => handleAdminAction('delete')}
@@ -933,7 +1051,7 @@ export default function ServerSidebar({
                         onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
                         onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                       >
-                        💥 Delete Server
+                        <Trash size={14} color="#fff" /> Delete Server
                       </button>
                     </div>
                   </>
@@ -1208,11 +1326,11 @@ export default function ServerSidebar({
                     top: '50%',
                     transform: 'translateY(-50%)',
                     color: '#8E9297',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
                     pointerEvents: 'none'
                   }}>
-                    {newChannelType === 'text' ? '#' : '🔊'}
+                    {newChannelType === 'text' ? <span style={{ fontSize: '18px', fontWeight: 'bold' }}>#</span> : <Speaker size={16} />}
                   </span>
                   <input
                     type="text"

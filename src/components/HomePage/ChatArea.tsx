@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { getSocket, connectSocket } from '../../utils/socket';
 import useVoiceChannel from '../../hooks/useVoiceChannel';
+import { Spinner, Cross, Heart, Chat, Mic, MicOff, Camera, CameraOff, Monitor, PhoneOff, Wave, Edit, Trash, File as FileIcon, Film, Smiley, Reply } from '../Icons';
 
 import api from '../../utils/api';
 
@@ -14,29 +15,94 @@ interface ChatAreaProps {
   isVoice?: boolean;
 }
 
-const VideoFeed = ({ stream, isLocal, isScreenShare, label }: { stream: MediaStream; isLocal: boolean; isScreenShare?: boolean; label: string }) => {
+// Memory cache to hold messages for rooms when out of view
+const chatMessagesCache: Record<string, any[]> = {};
+
+const VideoFeed = ({ stream, isLocal, isScreenShare, label, isDeafened }: { stream: MediaStream; isLocal: boolean; isScreenShare?: boolean; label: string; isDeafened?: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        console.error('Error enabling fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   return (
-    <div className="participant-card">
+    <div 
+      ref={containerRef} 
+      className={`participant-card ${isFullscreen ? 'participant-card--fullscreen' : ''}`}
+      style={{ position: 'relative' }}
+    >
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        muted={isLocal}
+        muted={isLocal || isDeafened}
         className={`participant-video ${isLocal ? 'local-video' : 'remote-video'} ${isScreenShare ? 'screen-share-video' : ''}`}
       />
       <div className="participant-name-badge">{label}</div>
+      <button
+        onClick={toggleFullscreen}
+        className="video-fullscreen-btn"
+        title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+        style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          background: 'rgba(0, 0, 0, 0.6)',
+          border: 'none',
+          borderRadius: '6px',
+          width: '28px',
+          height: '28px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          color: '#fff',
+          zIndex: 10,
+          transition: 'all 0.2s',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0, 0, 0, 0.6)'; e.currentTarget.style.transform = 'scale(1)'; }}
+      >
+        {isFullscreen ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+          </svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3M10 21v-6H4M4 20l6-6M20 4l-6 6M14 10V4"/>
+          </svg>
+        )}
+      </button>
     </div>
   );
 };
 
-const VoiceFeed = ({ participant, isLocal }: { participant: any; isLocal: boolean }) => {
+const VoiceFeed = ({ participant, isLocal, isDeafened }: { participant: any; isLocal: boolean; isDeafened?: boolean }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const avatar = participant.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${participant.username}`;
 
@@ -45,14 +111,14 @@ const VoiceFeed = ({ participant, isLocal }: { participant: any; isLocal: boolea
     if (!el || !participant.stream) return;
     el.srcObject = participant.stream;
     el.volume = 1.0;
-    el.muted = false;
+    el.muted = !!isDeafened;
     el.play().catch((err) => {
       console.warn('[VoiceFeed] audio autoplay blocked, retrying on interaction:', err);
       // Retry play on the next user gesture
       const retry = () => { el.play().catch(() => {}); document.removeEventListener('click', retry); };
       document.addEventListener('click', retry, { once: true });
     });
-  }, [participant.stream]);
+  }, [participant.stream, isDeafened]);
 
   return (
     <div className="participant-card">
@@ -159,6 +225,63 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   // Keep a stable ref to leaveChannel so effects don't go stale
   const leaveChannelRef = useRef<() => void>(() => {});
 
+  const chatPaneRef = useRef<HTMLDivElement>(null);
+  const [isChatFullscreen, setIsChatFullscreen] = useState(false);
+
+  // Resizable voice/chat split (percentage height for call pane, out of 100)
+  const [callPaneHeightPct, setCallPaneHeightPct] = useState(55);
+  const isDraggingRef = useRef(false);
+  const voiceLayoutRef = useRef<HTMLElement>(null);
+
+  const handleResizeDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      if (!isDraggingRef.current || !voiceLayoutRef.current) return;
+      const containerRect = voiceLayoutRef.current.getBoundingClientRect();
+      const clientY = ev instanceof MouseEvent ? ev.clientY : ev.touches[0].clientY;
+      const newPct = Math.min(80, Math.max(20, ((clientY - containerRect.top) / containerRect.height) * 100));
+      setCallPaneHeightPct(newPct);
+    };
+
+    const onUp = () => {
+      isDraggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove as EventListener);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove as EventListener);
+      document.removeEventListener('touchend', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove as EventListener);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove as EventListener, { passive: false });
+    document.addEventListener('touchend', onUp);
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsChatFullscreen(document.fullscreenElement === chatPaneRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleChatFullscreen = () => {
+    if (!chatPaneRef.current) return;
+    if (!document.fullscreenElement) {
+      chatPaneRef.current.requestFullscreen().catch((err) => {
+        console.error('Error enabling chat fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   // Hook for voice/video WebRTC calling
   const {
     localStream,
@@ -173,6 +296,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     shareScreen,
     stopScreenShare,
     leaveChannel,
+    isDeafened,
   } = useVoiceChannel({
     channelId: activeCallChannelId,
     socket: getSocket(),
@@ -303,8 +427,18 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       return;
     }
 
-    const fetchMessages = async () => {
+    const roomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+
+    // Load from memory cache if available to display instantly
+    if (chatMessagesCache[roomKey]) {
+      setMessages(chatMessagesCache[roomKey]);
+      setLoading(false);
+    } else {
+      setMessages([]);
       setLoading(true);
+    }
+
+    const fetchMessages = async () => {
       try {
         const url = channelId 
           ? `/messages/channel/${channelId}` 
@@ -312,12 +446,21 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
         const res = await api.get(url);
         const data = res.data;
         if (data.success) {
-          setMessages(data.messages || []);
+          const fetchedMessages = data.messages || [];
+          chatMessagesCache[roomKey] = fetchedMessages;
+
+          const currentRoomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+          if (currentRoomKey === roomKey) {
+            setMessages(fetchedMessages);
+          }
         }
       } catch (err) {
         console.error('Error fetching messages:', err);
       } finally {
-        setLoading(false);
+        const currentRoomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+        if (currentRoomKey === roomKey) {
+          setLoading(false);
+        }
       }
     };
 
@@ -340,18 +483,61 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     }
 
     const handleReceiveMessage = (newMessage: any) => {
+      const roomKey = newMessage.channel 
+        ? `channel-${newMessage.channel}` 
+        : newMessage.conversation 
+          ? `dm-${newMessage.conversation}` 
+          : '';
+
+      if (roomKey) {
+        const cached = chatMessagesCache[roomKey] || [];
+        if (!cached.some((m) => m._id === newMessage._id)) {
+          if (newMessage.sender?._id === currentUserId) {
+            const idx = cached.findIndex((m) => m.isOptimistic && m.content === newMessage.content);
+            if (idx !== -1) {
+              cached[idx] = newMessage;
+            } else {
+              cached.push(newMessage);
+            }
+          } else {
+            cached.push(newMessage);
+          }
+          chatMessagesCache[roomKey] = cached;
+        }
+      }
+
       if (
         (conversationId && newMessage.conversation === conversationId) ||
         (channelId && newMessage.channel === channelId)
       ) {
         setMessages((prev) => {
           if (prev.some((m) => m._id === newMessage._id)) return prev;
+          if (newMessage.sender?._id === currentUserId) {
+            const index = prev.findIndex((m) => m.isOptimistic && m.content === newMessage.content);
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = newMessage;
+              return updated;
+            }
+          }
           return [...prev, newMessage];
         });
       }
     };
 
     const handleMessageUpdated = (updatedMessage: any) => {
+      const roomKey = updatedMessage.channel 
+        ? `channel-${updatedMessage.channel}` 
+        : updatedMessage.conversation 
+          ? `dm-${updatedMessage.conversation}` 
+          : '';
+
+      if (roomKey && chatMessagesCache[roomKey]) {
+        chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+          m._id === updatedMessage._id ? updatedMessage : m
+        );
+      }
+
       if (
         (conversationId && updatedMessage.conversation === conversationId) ||
         (channelId && updatedMessage.channel === channelId)
@@ -363,6 +549,10 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     };
 
     const handleMessageDeleted = ({ messageId }: { messageId: string }) => {
+      Object.keys(chatMessagesCache).forEach((roomKey) => {
+        chatMessagesCache[roomKey] = chatMessagesCache[roomKey].filter((m) => m._id !== messageId);
+      });
+
       setMessages((prev) => prev.filter((m) => m._id !== messageId));
     };
 
@@ -498,12 +688,37 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   const handleSendMessage = () => {
     if ((!inputValue.trim() && selectedAttachments.length === 0) || (!conversationId && !channelId)) return;
 
+    const contentStr = inputValue.trim();
+    const attachmentsArr = selectedAttachments;
+    const tempId = 'temp-' + Date.now();
+
+    const optimisticMsg = {
+      _id: tempId,
+      content: contentStr,
+      attachments: attachmentsArr,
+      sender: currentUser,
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+      parentMessage: replyingToMessage ? {
+        _id: replyingToMessage._id,
+        content: replyingToMessage.content,
+        sender: replyingToMessage.sender
+      } : null
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    const roomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+    if (roomKey) {
+      chatMessagesCache[roomKey] = [...(chatMessagesCache[roomKey] || []), optimisticMsg];
+    }
+
     const socket = getSocket();
     socket.emit('send_message', {
       conversationId: conversationId || null,
       channelId: channelId || null,
-      content: inputValue.trim(),
-      attachments: selectedAttachments,
+      content: contentStr,
+      attachments: attachmentsArr,
       isAnonymous: false,
       parentMessageId: replyingToMessage?._id || null
     });
@@ -556,16 +771,58 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   const handleSaveEdit = async (messageId: string) => {
     if (!editingContent.trim()) return;
 
+    let originalContent = '';
+    setMessages((prev) => {
+      return prev.map((m) => {
+        if (m._id === messageId) {
+          originalContent = m.content;
+          return { ...m, content: editingContent.trim(), isOptimistic: true };
+        }
+        return m;
+      });
+    });
+
+    const roomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+    if (roomKey && chatMessagesCache[roomKey]) {
+      chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+        m._id === messageId ? { ...m, content: editingContent.trim(), isOptimistic: true } : m
+      );
+    }
+
     try {
       const res = await api.put(`/messages/edit/${messageId}`, { content: editingContent.trim() });
       const data = res.data;
       if (data.success) {
         setEditingMessageId(null);
         setEditingContent('');
+        setMessages((prev) =>
+          prev.map((m) => (m._id === messageId ? { ...m, isOptimistic: false } : m))
+        );
+        if (roomKey && chatMessagesCache[roomKey]) {
+          chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+            m._id === messageId ? { ...m, isOptimistic: false } : m
+          );
+        }
       } else {
+        setMessages((prev) =>
+          prev.map((m) => (m._id === messageId ? { ...m, content: originalContent, isOptimistic: false } : m))
+        );
+        if (roomKey && chatMessagesCache[roomKey]) {
+          chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+            m._id === messageId ? { ...m, content: originalContent, isOptimistic: false } : m
+          );
+        }
         alert(data.error || 'Failed to edit message');
       }
     } catch (err: any) {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === messageId ? { ...m, content: originalContent, isOptimistic: false } : m))
+      );
+      if (roomKey && chatMessagesCache[roomKey]) {
+        chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+          m._id === messageId ? { ...m, content: originalContent, isOptimistic: false } : m
+        );
+      }
       console.error('Error saving edited message:', err);
       const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to edit message';
       alert(errMsg);
@@ -576,15 +833,47 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   const handleDeleteMessage = async (messageId: string) => {
     if (!window.confirm('Are you sure you want to delete this message permanently?')) return;
 
+    setMessages((prev) =>
+      prev.map((m) =>
+        m._id === messageId ? { ...m, isOptimistic: true } : m
+      )
+    );
+
+    const roomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+    if (roomKey && chatMessagesCache[roomKey]) {
+      chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+        m._id === messageId ? { ...m, isOptimistic: true } : m
+      );
+    }
+
     try {
       const res = await api.delete(`/messages/${messageId}`);
       const data = res.data;
       if (data.success) {
         setMessages((prev) => prev.filter((m) => m._id !== messageId));
+        if (roomKey && chatMessagesCache[roomKey]) {
+          chatMessagesCache[roomKey] = chatMessagesCache[roomKey].filter((m) => m._id !== messageId);
+        }
       } else {
+        setMessages((prev) =>
+          prev.map((m) => (m._id === messageId ? { ...m, isOptimistic: false } : m))
+        );
+        if (roomKey && chatMessagesCache[roomKey]) {
+          chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+            m._id === messageId ? { ...m, isOptimistic: false } : m
+          );
+        }
         alert(data.error || 'Failed to delete message');
       }
     } catch (err: any) {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === messageId ? { ...m, isOptimistic: false } : m))
+      );
+      if (roomKey && chatMessagesCache[roomKey]) {
+        chatMessagesCache[roomKey] = chatMessagesCache[roomKey].map((m) =>
+          m._id === messageId ? { ...m, isOptimistic: false } : m
+        );
+      }
       console.error('Error deleting message:', err);
       const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to delete message';
       alert(errMsg);
@@ -594,6 +883,28 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   // Send Giphy GIF link
   const handleSendGif = (gifUrl: string) => {
     if (!conversationId && !channelId) return;
+
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg = {
+      _id: tempId,
+      content: gifUrl,
+      attachments: [],
+      sender: currentUser,
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+      parentMessage: replyingToMessage ? {
+        _id: replyingToMessage._id,
+        content: replyingToMessage.content,
+        sender: replyingToMessage.sender
+      } : null
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    const roomKey = channelId ? `channel-${channelId}` : conversationId ? `dm-${conversationId}` : '';
+    if (roomKey) {
+      chatMessagesCache[roomKey] = [...(chatMessagesCache[roomKey] || []), optimisticMsg];
+    }
 
     const socket = getSocket();
     socket.emit('send_message', {
@@ -610,6 +921,811 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     setReplyingToMessage(null);
   };
 
+  const renderChatContent = () => {
+    return (
+      <>
+        {/* Messages Scroll Panel */}
+        <div className="chat-messages-scroll">
+          {loading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8E9297', gap: '8px' }}>
+              <Spinner size={16} color="#14AC7B" />
+              <span>Loading chat history...</span>
+            </div>
+          ) : messages.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8E9297', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Wave size={20} color="#14AC7B" />
+                <span>This is the start of your message history with {recipientName}.</span>
+              </div>
+              <span style={{ fontSize: '12px', color: '#58F6C2' }}>Say hello!</span>
+            </div>
+          ) : (
+            messages.map((msg, index) => {
+              const currentDateLabel = getMessageLocalDate(msg.createdAt);
+              const prevDateLabel = index > 0 ? getMessageLocalDate(messages[index - 1].createdAt) : null;
+              const showSeparator = currentDateLabel !== prevDateLabel;
+
+              const sender = msg.sender || { username: 'anonymous', displayName: 'Anonymous', avatar: '' };
+              const isMyMessage = sender._id === currentUserId;
+              const contentIsGif = isGifUrl(msg.content);
+
+              return (
+                <div key={msg._id || index}>
+                  {showSeparator && (
+                    <div className="chat-date-separator">
+                      <div className="chat-date-line" />
+                      <span className="chat-date-label">{currentDateLabel}</span>
+                      <div className="chat-date-line" />
+                    </div>
+                  )}
+
+                  <div 
+                    className={`chat-message-row ${editingMessageId === msg._id ? 'chat-message-row--editing' : ''} ${msg.isOptimistic ? 'chat-message-row--faded' : ''}`}
+                    style={{
+                      display: 'flex',
+                      padding: '8px 20px',
+                      gap: '16px',
+                      position: 'relative',
+                      alignItems: 'flex-start',
+                      transition: 'background-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => {
+                      const actions = e.currentTarget.querySelector('.chat-message-actions') as HTMLElement;
+                      if (actions && !editingMessageId && !msg.isOptimistic) actions.style.display = 'flex';
+                    }}
+                    onMouseLeave={(e) => {
+                      const actions = e.currentTarget.querySelector('.chat-message-actions') as HTMLElement;
+                      if (actions) actions.style.display = 'none';
+                    }}
+                  >
+                    {/* User Avatar */}
+                    {sender.avatar ? (
+                      <img
+                        src={sender.avatar}
+                        alt={sender.username}
+                        className="chat-message-avatar"
+                      />
+                    ) : (
+                      <div className="chat-message-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#14ac7b', color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>
+                        {sender.username ? sender.username[0].toUpperCase() : '?'}
+                      </div>
+                    )}
+
+                    {/* Message Body */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff' }}>
+                          {sender.displayName || sender.username}
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#72767D' }}>
+                          {formatMessageTime(msg.createdAt)}
+                        </span>
+                      </div>
+
+                      {/* Reply preview */}
+                      {msg.parentMessage && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          borderLeft: '2px solid #14AC7B',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          color: '#8E9297',
+                          marginTop: '2px',
+                          marginBottom: '4px',
+                          width: 'fit-content',
+                          maxWidth: '80%'
+                        }}>
+                          <Reply size={12} color="#14AC7B" />
+                          <span style={{ fontWeight: '600', color: '#fff' }}>
+                            @{msg.parentMessage.sender?.displayName || msg.parentMessage.sender?.username}
+                          </span>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {isGifUrl(msg.parentMessage.content) ? '[GIF]' : msg.parentMessage.content}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Editing / Content */}
+                      {editingMessageId === msg._id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px', width: '100%' }}>
+                          <input
+                            type="text"
+                            value={editingContent}
+                            onChange={(e) => setEditingContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit(msg._id);
+                              if (e.key === 'Escape') setEditingMessageId(null);
+                            }}
+                            style={{
+                              background: '#0D1114',
+                              border: '1px solid #14AC7B',
+                              borderRadius: '6px',
+                              padding: '8px 12px',
+                              color: '#fff',
+                              fontSize: '14px',
+                              outline: 'none',
+                              width: '100%'
+                            }}
+                            autoFocus
+                          />
+                          <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: '#8E9297' }}>
+                            <span>escape to <button onClick={() => setEditingMessageId(null)} style={{ background: 'none', border: 'none', color: '#14AC7B', padding: 0, cursor: 'pointer' }}>cancel</button></span>
+                            <span>•</span>
+                            <span>enter to <button onClick={() => handleSaveEdit(msg._id)} style={{ background: 'none', border: 'none', color: '#14AC7B', padding: 0, cursor: 'pointer' }}>save</button></span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: '#DCDDDE', fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-word' }}>
+                          {contentIsGif ? (
+                            <img 
+                              src={msg.content} 
+                              alt="GIF" 
+                              style={{ 
+                                maxWidth: '100%', 
+                                maxHeight: '240px', 
+                                borderRadius: '8px', 
+                                marginTop: '4px',
+                                objectFit: 'contain'
+                              }} 
+                            />
+                          ) : (
+                            msg.content
+                          )}
+
+                          {/* Render files/attachments if any */}
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                              {msg.attachments.map((att: any, attIdx: number) => {
+                                const isImg = att.fileType === 'image';
+                                const isVid = att.fileType === 'video';
+                                
+                                return (
+                                  <div key={attIdx} style={{ maxWidth: '100%' }}>
+                                    {isImg ? (
+                                      <img 
+                                        src={att.url} 
+                                        alt={att.fileName} 
+                                        style={{ 
+                                          maxWidth: '100%', 
+                                          maxHeight: '300px', 
+                                          borderRadius: '8px', 
+                                          border: '1px solid rgba(255,255,255,0.05)',
+                                          cursor: 'pointer'
+                                        }} 
+                                        onClick={() => window.open(att.url, '_blank')}
+                                      />
+                                    ) : isVid ? (
+                                      <video 
+                                        src={att.url} 
+                                        controls 
+                                        playsInline 
+                                        style={{ 
+                                          maxWidth: '100%', 
+                                          maxHeight: '300px', 
+                                          borderRadius: '8px',
+                                          border: '1px solid rgba(255,255,255,0.05)'
+                                        }} 
+                                      />
+                                    ) : (
+                                      <a 
+                                        href={att.url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '10px',
+                                          padding: '12px',
+                                          background: '#0D1114',
+                                          borderRadius: '8px',
+                                          border: '1px solid rgba(255,255,255,0.08)',
+                                          color: '#14AC7B',
+                                          textDecoration: 'none',
+                                          fontSize: '13px',
+                                          width: 'fit-content',
+                                          transition: 'background 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#12171B'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = '#0D1114'}
+                                      >
+                                        <FileIcon size={24} color="#14AC7B" />
+                                        <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+                                          <span style={{ color: '#fff', fontWeight: 'bold' }}>{att.fileName}</span>
+                                          <span style={{ color: '#8E9297', fontSize: '11px' }}>{(att.fileSize / 1024).toFixed(1)} KB</span>
+                                        </div>
+                                      </a>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Display edited timestamp if edited */}
+                      {msg.isEdited && !editingMessageId && (
+                        <span style={{ fontSize: '10px', color: '#72767D', fontStyle: 'italic', marginLeft: '4px' }}>
+                          (edited)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Reactions Bar & Actions */}
+                    {!msg.isOptimistic && (
+                      <>
+                        {/* Hover action buttons (Edit, Delete, Reply) */}
+                        <div 
+                          className="chat-message-actions" 
+                          style={{
+                            display: 'none',
+                            position: 'absolute',
+                            top: '-16px',
+                            right: '20px',
+                            background: '#0D1114',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: '4px',
+                            padding: '2px',
+                            zIndex: 5,
+                            gap: '4px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                          }}
+                        >
+                          {/* Reply Button */}
+                          <button
+                            onClick={() => setReplyingToMessage(msg)}
+                            style={{
+                              background: 'none', border: 'none', color: '#8E9297', cursor: 'pointer',
+                              padding: '6px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
+                            title="Reply to Message"
+                            onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                            onMouseLeave={e => e.currentTarget.style.color = '#8E9297'}
+                          >
+                            <Reply size={16} color="currentColor" />
+                          </button>
+
+                          {isMyMessage && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingMessageId(msg._id);
+                                  setEditingContent(msg.content);
+                                }}
+                                style={{
+                                  background: 'none', border: 'none', color: '#8E9297', cursor: 'pointer',
+                                  padding: '6px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                                title="Edit Message"
+                                onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                                onMouseLeave={e => e.currentTarget.style.color = '#8E9297'}
+                              >
+                                <Edit size={16} color="currentColor" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMessage(msg._id)}
+                                style={{
+                                  background: 'none', border: 'none', color: '#8E9297', cursor: 'pointer',
+                                  padding: '6px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                                title="Delete Message"
+                                onMouseEnter={e => e.currentTarget.style.color = '#F85149'}
+                                onMouseLeave={e => e.currentTarget.style.color = '#8E9297'}
+                              >
+                                <Trash size={16} color="currentColor" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Reaction details (if any exist) */}
+                        {msg.reactions && msg.reactions.length > 0 && (
+                          <div style={{
+                            display: 'flex',
+                            gap: '6px',
+                            flexWrap: 'wrap',
+                            marginTop: '6px',
+                            paddingLeft: '56px'
+                          }}>
+                            {(() => {
+                              // Group reactions by emoji
+                              const counts: Record<string, { count: number; users: string[]; hasReacted: boolean }> = {};
+                              msg.reactions.forEach((r: any) => {
+                                const reactorId = r.user?._id || r.user;
+                                const isMe = reactorId === currentUserId;
+                                if (!counts[r.emoji]) {
+                                  counts[r.emoji] = { count: 0, users: [], hasReacted: false };
+                                }
+                                counts[r.emoji].count += 1;
+                                counts[r.emoji].users.push(r.user?.username || 'someone');
+                                if (isMe) counts[r.emoji].hasReacted = true;
+                              });
+
+                              return Object.entries(counts).map(([emoji, data]) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleToggleReaction(msg._id)}
+                                  title={`Reacted by: ${data.users.join(', ')}`}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    background: data.hasReacted ? 'rgba(20, 172, 123, 0.15)' : '#0D1114',
+                                    border: data.hasReacted ? '1px solid #14AC7B' : '1px solid rgba(255,255,255,0.05)',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    color: data.hasReacted ? '#fff' : '#8E9297',
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.2s',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = '#14AC7B';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!data.hasReacted) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
+                                  }}
+                                >
+                                  {emoji === '❤️' ? (
+                                    <Heart size={14} color="#FF4B4B" fill="#FF4B4B" />
+                                  ) : (
+                                    <span>{emoji}</span>
+                                  )}
+                                  <span>{data.count}</span>
+                                </button>
+                              ));
+                            })()}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Giphy search container */}
+        {giphyOpen && (
+          <div style={{
+            position: 'absolute',
+            bottom: '72px',
+            left: '20px',
+            right: '20px',
+            background: '#0D1114',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            padding: '12px',
+            zIndex: 100,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#14AC7B' }}>Search Giphy</span>
+              <button 
+                onClick={() => setGiphyOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#8E9297', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Cross size={16} color="#8E9297" />
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Search funny gifs..."
+              value={giphySearch}
+              onChange={(e) => setGiphySearch(e.target.value)}
+              style={{
+                background: '#070A0C',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                color: '#fff',
+                fontSize: '13px',
+                outline: 'none',
+                width: '100%',
+              }}
+              autoFocus
+            />
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '8px',
+              maxHeight: '160px',
+              overflowY: 'auto',
+              marginTop: '4px'
+            }}>
+              {loadingGifs ? (
+                <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'center', padding: '20px', color: '#8E9297' }}>
+                  <Spinner size={20} color="#14AC7B" />
+                </div>
+              ) : gifs.length === 0 ? (
+                <div style={{ gridColumn: 'span 3', textAlign: 'center', padding: '20px', color: '#8E9297', fontSize: '12px' }}>
+                  No GIFs found. Try typing a query.
+                </div>
+              ) : (
+                gifs.map((gif: any) => {
+                  const gifUrl = gif.images?.fixed_height?.url || gif.images?.original?.url;
+                  return (
+                    <img
+                      key={gif.id}
+                      src={gifUrl}
+                      alt={gif.title || 'GIF'}
+                      onClick={() => handleSendGif(gifUrl)}
+                      style={{
+                        width: '100%',
+                        height: '110px',
+                        objectFit: 'cover',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.04)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    />
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Typing indicators */}
+        {typingUsers.length > 0 && (
+          <div style={{
+            padding: '0 20px 4px 20px',
+            fontSize: '11px',
+            color: '#FAA61A',
+            fontStyle: 'italic',
+            background: 'transparent'
+          }}>
+            {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+          </div>
+        )}
+
+        {/* CSS Animation for upload spinner */}
+        <style>{`
+          @keyframes upload-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+
+        {/* Uploading progress and error notifications */}
+        {(uploading || uploadError) && (
+          <div style={{
+            padding: '8px 16px',
+            margin: '0 20px 8px 20px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: uploadError ? 'rgba(237, 66, 69, 0.1)' : 'rgba(20, 172, 123, 0.1)',
+            border: uploadError ? '1px solid #ED4245' : '1px solid #14AC7B',
+            color: uploadError ? '#ED4245' : '#14AC7B',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {!uploadError && <span style={{
+                display: 'inline-block',
+                width: '14px',
+                height: '14px',
+                border: '2px solid transparent',
+                borderTopColor: '#14AC7B',
+                borderRadius: '50%',
+                animation: 'upload-spin 0.8s linear infinite'
+              }} />}
+              <span>{uploadError || uploadProgressText}</span>
+            </div>
+            {uploadError && (
+              <button 
+                onClick={() => setUploadError('')}
+                style={{ background: 'none', border: 'none', color: '#ED4245', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Cross size={14} color="#ED4245" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Selected/uploaded attachments preview list */}
+        {selectedAttachments.length > 0 && (
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            flexWrap: 'wrap',
+            padding: '12px',
+            background: '#090D0F',
+            borderRadius: '8px',
+            margin: '0 20px 8px 20px',
+            border: '1px solid rgba(255,255,255,0.05)'
+          }}>
+            {selectedAttachments.map((att, idx) => (
+              <div key={idx} style={{
+                position: 'relative',
+                width: '100px',
+                height: '100px',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                background: '#0D1114',
+                border: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '4px'
+              }}>
+                {att.fileType === 'image' ? (
+                  <img 
+                    src={att.url} 
+                    alt={att.fileName} 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
+                ) : att.fileType === 'video' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                    <Film size={24} color="#14AC7B" />
+                    <span style={{ fontSize: '10px', color: '#8E9297', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '90px' }}>
+                      {att.fileName}
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                    <FileIcon size={24} color="#14AC7B" />
+                    <span style={{ fontSize: '10px', color: '#8E9297', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '90px' }}>
+                      {att.fileName}
+                    </span>
+                  </div>
+                )}
+                {/* Delete button */}
+                <button
+                  onClick={() => setSelectedAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                  style={{
+                    position: 'absolute',
+                    top: '4px',
+                    right: '4px',
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '18px',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0
+                  }}
+                >
+                  <Cross size={10} color="#fff" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Replying banner */}
+        {replyingToMessage && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(20, 172, 123, 0.08)',
+            borderLeft: '4px solid #14AC7B',
+            padding: '8px 16px',
+            fontSize: '13px',
+            color: '#8E9297',
+            borderTopLeftRadius: '8px',
+            borderTopRightRadius: '8px',
+            margin: '0 20px -10px 20px',
+            zIndex: 10,
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>Replying to</span>
+              <strong style={{ color: '#fff' }}>
+                @{replyingToMessage.sender?.displayName || replyingToMessage.sender?.username}
+              </strong>
+              <span style={{
+                opacity: 0.6,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '250px'
+              }}>
+                {isGifUrl(replyingToMessage.content) ? '[GIF]' : replyingToMessage.content}
+              </span>
+            </div>
+            <button 
+              onClick={() => setReplyingToMessage(null)}
+              style={{
+                background: 'none', border: 'none', color: '#8E9297',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}
+            >
+              <Cross size={14} color="#8E9297" />
+            </button>
+          </div>
+        )}
+
+        {/* Message input */}
+        <div className="chat-input-bar">
+          <input 
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+            accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+          />
+
+          <button 
+            className="chat-input-add-btn" 
+            aria-label="Add attachment"
+            onClick={handlePlusClick}
+            disabled={uploading}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M8 0C3.5888 0 0 3.5888 0 8.00001C0 12.4112 3.5888 16 8 16C12.4112 16 16 12.4112 16 8.00001C16 3.5888 12.4112 0 8 0ZM12 8.80001H8.8V12H7.2V8.80001H4V7.20001H7.2V4H8.8V7.20001H12V8.80001Z"
+                fill="#8E9297"
+              />
+            </svg>
+          </button>
+
+          <input
+            className="chat-input-field"
+            type="text"
+            placeholder={`Message ${recipientName}`}
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSendMessage();
+            }}
+            aria-label={`Message ${recipientName}`}
+          />
+
+          <div className="chat-input-actions">
+            {/* GIF */}
+            <button 
+              className="chat-input-action-btn" 
+              aria-label="GIF"
+              onClick={() => setGiphyOpen(!giphyOpen)}
+              style={{
+                background: giphyOpen ? 'rgba(20, 172, 123, 0.15)' : 'none',
+                borderRadius: '6px',
+                padding: '4px',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Film size={20} color={giphyOpen ? '#14AC7B' : '#8E9297'} />
+            </button>
+
+            {/* Emoji Trigger */}
+            <button 
+              className="chat-input-action-btn" 
+              aria-label="Add Emoji"
+              onClick={() => setEmojiOpen(!emojiOpen)}
+              style={{
+                background: emojiOpen ? 'rgba(20, 172, 123, 0.15)' : 'none',
+                borderRadius: '6px',
+                padding: '4px',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Smiley size={20} color={emojiOpen ? '#14AC7B' : '#8E9297'} />
+            </button>
+
+            {/* Custom Emoji Picker Popover */}
+            {emojiOpen && (
+              <div style={{
+                position: 'absolute',
+                bottom: '72px',
+                right: '20px',
+                background: '#0D1114',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                padding: '12px',
+                zIndex: 100,
+                width: '240px',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#14AC7B' }}>Choose an Emoji</span>
+                  <button 
+                    onClick={() => setEmojiOpen(false)}
+                    style={{ background: 'none', border: 'none', color: '#8E9297', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Cross size={14} color="#8E9297" />
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#8E9297', marginBottom: '6px', fontWeight: 'bold', textTransform: 'uppercase' }}>Expressive Faces</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
+                      {['😆', '😂', '🔥', '👍', '🎉', '👏'].map(emoji => (
+                        <button
+                          key={emoji}
+                          onClick={() => handleAddEmoji(emoji)}
+                          style={{
+                            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
+                            padding: '4px', borderRadius: '6px', transition: 'background 0.2s',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#8E9297', marginBottom: '6px', fontWeight: 'bold', textTransform: 'uppercase' }}>Hearts & Symbols</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
+                      {['❤️', '💖', '💝', '💕', '⭐', '👀'].map(emoji => (
+                        <button
+                          key={emoji}
+                          onClick={() => handleAddEmoji(emoji)}
+                          style={{
+                            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
+                            padding: '4px', borderRadius: '6px', transition: 'background 0.2s',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="chat-input-divider" />
+
+          {/* Send button */}
+          <button
+            className="chat-input-send-btn"
+            aria-label="Send Message"
+            onClick={handleSendMessage}
+          >
+            <svg width="18" height="18" viewBox="0 0 22 21" fill="none">
+              <path
+                d="M20.0239 10.9981L13.7051 11.609L12.0423 16.9269C11.9432 17.2413 12.0404 17.585 12.2906 17.8003C12.5399 18.0155 12.894 18.0609 13.1905 17.9164L21 11.2106C21.271 11.0784 21.4429 10.8036 21.4429 10.5024C21.4429 10.2012 21.271 9.92645 21 9.79425L13.1999 3.0836C12.9034 2.93914 12.5493 2.98446 12.3 3.19974C12.0498 3.41503 11.9526 3.75778 12.0517 4.07221L13.7145 9.39006L19.921 10.0019C20.1759 10.0274 20.3704 10.2417 20.3704 10.4976C20.3704 10.7535 20.1759 10.9678 19.921 10.9933L20.0239 10.9981Z"
+                fill="#14AC7B"
+              />
+            </svg>
+          </button>
+        </div>
+      </>
+    );
+  };
+
   // Render welcome state if no conversation is open
   if (!conversationId && !channelId) {
     return (
@@ -618,11 +1734,10 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
           <div style={{
             width: '80px', height: '80px', borderRadius: '50%',
             background: 'rgba(20, 172, 123, 0.1)',
-            color: '#14AC7B', fontSize: '32px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: '0 8px 24px rgba(20,172,123,0.15)'
           }}>
-            💬
+            <Chat size={32} color="#14AC7B" />
           </div>
           <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', margin: 0 }}>Select a Conversation or Channel</h2>
           <p style={{ fontSize: '14px', color: '#8E9297', margin: 0, lineHeight: '1.6' }}>
@@ -633,10 +1748,225 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     );
   }
 
+  if (isVoice) {
+    return (
+      <section ref={voiceLayoutRef} className="chat-area voice-layout-container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', background: '#0b0e11' }}>
+        {/* Top Call/Join Pane */}
+        <div className="voice-call-pane" style={{ height: `${callPaneHeightPct}%`, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#0b0e11', position: 'relative', flexShrink: 0 }}>
+          {callActive ? (
+            <div className="voice-call-active-container" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+              <div className="calling-header" style={{ flexShrink: 0 }}>
+                <div className="calling-title">
+                  <span className="calling-status-indicator" />
+                  <span>
+                    {callType === 'video' ? 'Video Call' : 'Voice Call'} — {recipientName}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {isConnecting && <span style={{ fontSize: '12px', color: '#FAA61A' }}>Connecting...</span>}
+                  {callError && <span style={{ fontSize: '12px', color: '#F85149' }}>{callError}</span>}
+                </div>
+              </div>
+
+              {/* Call Grid */}
+              <div className="calling-participants-grid voice-participants-grid-custom" style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+                {/* Local Feed */}
+                {isCameraOn || isScreenSharing ? (
+                  localStream ? (
+                    <VideoFeed stream={localStream} isLocal={true} isScreenShare={isScreenSharing} label="You" isDeafened={isDeafened} />
+                  ) : null
+                ) : (
+                  <VoiceFeed
+                    participant={{
+                      username: currentUser.username,
+                      displayName: currentUser.displayName || currentUser.username,
+                      avatar: currentUser.avatar,
+                    }}
+                    isLocal={true}
+                  />
+                )}
+
+                {/* Remote Participants */}
+                {participants.map((p) => {
+                  const hasVideo = p.stream && p.stream.getVideoTracks().length > 0 && p.stream.getVideoTracks()[0].enabled;
+                  return hasVideo && p.stream ? (
+                    <VideoFeed key={p.userId} stream={p.stream} isLocal={false} label={p.displayName || p.username} isDeafened={isDeafened} />
+                  ) : (
+                    <VoiceFeed key={p.userId} participant={p} isLocal={false} isDeafened={isDeafened} />
+                  );
+                })}
+              </div>
+
+              {/* Controls bar */}
+              <div className="calling-controls-bar" style={{ flexShrink: 0, padding: '16px', background: '#12181d', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <button
+                  className={`call-control-btn ${isMicOn ? 'call-control-btn--active' : ''}`}
+                  onClick={toggleMic}
+                  title={isMicOn ? 'Mute Mic' : 'Unmute Mic'}
+                >
+                  {isMicOn ? <Mic size={20} /> : <MicOff size={20} />}
+                </button>
+                
+                <button
+                  className={`call-control-btn ${isCameraOn ? 'call-control-btn--active' : ''}`}
+                  onClick={toggleCamera}
+                  title={isCameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+                >
+                  {isCameraOn ? <Camera size={20} /> : <CameraOff size={20} />}
+                </button>
+     
+                <button
+                  className={`call-control-btn ${isScreenSharing ? 'call-control-btn--active' : ''}`}
+                  onClick={isScreenSharing ? stopScreenShare : shareScreen}
+                  title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+                >
+                  <Monitor size={20} />
+                </button>
+     
+                <button
+                  className="call-control-btn call-control-btn--danger"
+                  onClick={handleEndCall}
+                  title="Leave Call"
+                >
+                  <PhoneOff size={20} color="#fff" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="voice-call-inactive-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '40px', textAlign: 'center', gap: '20px' }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(20, 172, 123, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid rgba(20, 172, 123, 0.2)'
+              }}>
+                <Mic size={32} color="#14AC7B" />
+              </div>
+              <h3 style={{ margin: 0, fontSize: '20px', color: '#fff', fontWeight: '600' }}>Voice Channel disconnected</h3>
+              <p style={{ margin: 0, fontSize: '14px', color: '#8E9297', maxWidth: '320px', lineHeight: '1.5' }}>
+                You have left the voice call, but you can still view and send text messages in this channel.
+              </p>
+              <button
+                onClick={() => handleStartCall('audio')}
+                style={{
+                  background: '#14AC7B',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '10px 24px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(20, 172, 123, 0.25)',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#119369'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#14AC7B'}
+              >
+                Join Voice Channel
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Resize Notch / Drag Handle */}
+        <div
+          className="voice-resize-handle"
+          onMouseDown={handleResizeDragStart}
+          onTouchStart={handleResizeDragStart}
+          title="Drag to resize voice/chat split"
+        >
+          {/* Three-bar grip */}
+          <div style={{ display: 'flex', alignItems: 'center', flexDirection: 'column', gap: '3px' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} className="voice-resize-grip-bar" style={{
+                width: '40px',
+                height: '2px',
+                borderRadius: '2px',
+                background: 'rgba(255,255,255,0.18)',
+                transition: 'background 0.2s',
+              }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom Chat Pane */}
+        <div 
+          ref={chatPaneRef} 
+          className={`voice-chat-pane ${isChatFullscreen ? 'voice-chat-pane--fullscreen' : ''}`}
+          style={{ 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            minHeight: 0,
+            background: '#131A20',
+            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+            position: 'relative'
+          }}
+        >
+          {/* Chat Pane Header */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 16px',
+            background: '#171E24',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+            height: '52px',
+            flexShrink: 0
+          }}>
+            <span style={{ color: '#14AC7B', fontWeight: 600, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              # {recipientName} Chat
+            </span>
+            <button
+              onClick={toggleChatFullscreen}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#8E9297',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px',
+                borderRadius: '4px',
+                transition: 'all 0.2s',
+                flexShrink: 0
+              }}
+              title={isChatFullscreen ? 'Exit Fullscreen' : 'Fullscreen Chat'}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#8E9297'; e.currentTarget.style.background = 'none'; }}
+            >
+              {isChatFullscreen ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3M10 21v-6H4M4 20l6-6M20 4l-6 6M14 10V4"/>
+                </svg>
+              )}
+            </button>
+          </div>
+          {renderChatContent()}
+        </div>
+      </section>
+    );
+  }
+
+  // Otherwise, render the original chat-area layout
   return (
-    <section className="chat-area" style={{ position: 'relative' }}>
-      {/* Header */}
-      <header className="chat-header">
+    <section
+      ref={(el) => { (voiceLayoutRef as any).current = el; }}
+      className="chat-area"
+      style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
+    >
+      {/* Header — always pinned at top */}
+      <header className="chat-header" style={{ flexShrink: 0 }}>
         <div className="chat-header-left">
           {channelId ? (
             <div style={{
@@ -700,916 +2030,116 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
         </div>
       </header>
 
-      {/* Calling UI Container */}
-      {callActive && (
-        <div className="calling-container">
-          <div className="calling-header">
-            <div className="calling-title">
-              <span className="calling-status-indicator" />
-              <span>
-                {callType === 'video' ? 'Video Call' : 'Voice Call'} — {recipientName}
-              </span>
-            </div>
-            {isConnecting && <span style={{ fontSize: '12px', color: '#FAA61A' }}>Connecting...</span>}
-            {callError && <span style={{ fontSize: '12px', color: '#F85149' }}>{callError}</span>}
-          </div>
+      {/* When a call is active: resizable call pane + drag handle + chat */}
+      {callActive ? (
+        <>
+          {/* Call pane — resizable height */}
+          <div style={{ height: `${callPaneHeightPct}%`, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div className="calling-container" style={{ margin: 0, borderRadius: 0, border: 'none', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div className="calling-header">
+                <div className="calling-title">
+                  <span className="calling-status-indicator" />
+                  <span>
+                    {callType === 'video' ? 'Video Call' : 'Voice Call'} — {recipientName}
+                  </span>
+                </div>
+                {isConnecting && <span style={{ fontSize: '12px', color: '#FAA61A' }}>Connecting...</span>}
+                {callError && <span style={{ fontSize: '12px', color: '#F85149' }}>{callError}</span>}
+              </div>
 
-          <div className="calling-participants-grid">
-            {/* Local Feed */}
-            {isCameraOn || isScreenSharing ? (
-              localStream ? (
-                <VideoFeed stream={localStream} isLocal={true} isScreenShare={isScreenSharing} label="You" />
-              ) : null
-            ) : (
-              <VoiceFeed
-                participant={{
-                  username: currentUser.username,
-                  displayName: currentUser.displayName || currentUser.username,
-                  avatar: currentUser.avatar,
-                }}
-                isLocal={true}
-              />
-            )}
-
-            {/* Remote Participants */}
-            {participants.map((p) => {
-              const hasVideo = p.stream && p.stream.getVideoTracks().length > 0 && p.stream.getVideoTracks()[0].enabled;
-              return hasVideo && p.stream ? (
-                <VideoFeed key={p.userId} stream={p.stream} isLocal={false} label={p.displayName || p.username} />
-              ) : (
-                <VoiceFeed key={p.userId} participant={p} isLocal={false} />
-              );
-            })}
-          </div>
-
-          <div className="calling-controls-bar">
-            <button
-              className={`call-control-btn ${isMicOn ? 'call-control-btn--active' : ''}`}
-              onClick={toggleMic}
-              title={isMicOn ? 'Mute Mic' : 'Unmute Mic'}
-            >
-              {isMicOn ? '🎙️' : '🔇'}
-            </button>
-            
-            <button
-              className={`call-control-btn ${isCameraOn ? 'call-control-btn--active' : ''}`}
-              onClick={toggleCamera}
-              title={isCameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
-            >
-              {isCameraOn ? '📹' : '📷'}
-            </button>
-
-            <button
-              className={`call-control-btn ${isScreenSharing ? 'call-control-btn--active' : ''}`}
-              onClick={isScreenSharing ? stopScreenShare : shareScreen}
-              title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
-            >
-              🖥️
-            </button>
-
-            <button
-              className="call-control-btn call-control-btn--danger"
-              onClick={handleEndCall}
-              title="Hang Up"
-            >
-              🛑
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Messages Scroll Panel */}
-      <div className="chat-messages-scroll">
-        {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8E9297' }}>
-            <span>⏳ Loading chat history...</span>
-          </div>
-        ) : messages.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8E9297', gap: '8px' }}>
-            <span>👋 This is the start of your message history with {recipientName}.</span>
-            <span style={{ fontSize: '12px', color: '#58F6C2' }}>Say hello!</span>
-          </div>
-        ) : (
-          messages.map((msg, index) => {
-            const currentDateLabel = getMessageLocalDate(msg.createdAt);
-            const prevDateLabel = index > 0 ? getMessageLocalDate(messages[index - 1].createdAt) : null;
-            const showSeparator = currentDateLabel !== prevDateLabel;
-
-            const sender = msg.sender || { username: 'anonymous', displayName: 'Anonymous', avatar: '' };
-            const fallbackAvatar = `https://api.dicebear.com/7.x/initials/svg?seed=${sender.username}`;
-            const isMyMessage = sender._id === currentUserId;
-            const contentIsGif = isGifUrl(msg.content);
-
-            return (
-              <div key={msg._id || index}>
-                {showSeparator && (
-                  <div className="chat-date-separator">
-                    <div className="chat-date-line" />
-                    <span className="chat-date-label">{currentDateLabel}</span>
-                    <div className="chat-date-line" />
-                  </div>
+              <div className="calling-participants-grid" style={{ flex: 1, maxHeight: 'none', overflowY: 'auto' }}>
+                {/* Local Feed */}
+                {isCameraOn || isScreenSharing ? (
+                  localStream ? (
+                    <VideoFeed stream={localStream} isLocal={true} isScreenShare={isScreenSharing} label="You" isDeafened={isDeafened} />
+                  ) : null
+                ) : (
+                  <VoiceFeed
+                    participant={{
+                      username: currentUser.username,
+                      displayName: currentUser.displayName || currentUser.username,
+                      avatar: currentUser.avatar,
+                    }}
+                    isLocal={true}
+                  />
                 )}
 
-                {msg.parentMessage && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '12px',
-                    color: '#72767D',
-                    marginLeft: '56px',
-                    marginBottom: '4px',
-                    opacity: 0.85
-                  }}>
-                    <span style={{ color: '#14AC7B' }}>↩</span>
-                    <strong style={{ color: '#B9BBBE' }}>
-                      @{msg.parentMessage.sender?.displayName || msg.parentMessage.sender?.username || 'Deleted User'}
-                    </strong>
-                    <span style={{
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      maxWidth: '300px',
-                      fontStyle: 'italic'
-                    }}>
-                      {isGifUrl(msg.parentMessage.content) ? '[GIF]' : msg.parentMessage.content}
-                    </span>
-                  </div>
-                )}
+                {/* Remote Participants */}
+                {participants.map((p) => {
+                  const hasVideo = p.stream && p.stream.getVideoTracks().length > 0 && p.stream.getVideoTracks()[0].enabled;
+                  return hasVideo && p.stream ? (
+                    <VideoFeed key={p.userId} stream={p.stream} isLocal={false} label={p.displayName || p.username} isDeafened={isDeafened} />
+                  ) : (
+                    <VoiceFeed key={p.userId} participant={p} isLocal={false} isDeafened={isDeafened} />
+                  );
+                })}
+              </div>
 
-                <div 
-                  className="chat-message"
-                  style={{ position: 'relative' }}
-                  onMouseEnter={(e) => {
-                    const actionPanel = e.currentTarget.querySelector('.message-hover-actions') as HTMLElement;
-                    if (actionPanel) actionPanel.style.opacity = '1';
-                  }}
-                  onMouseLeave={(e) => {
-                    const actionPanel = e.currentTarget.querySelector('.message-hover-actions') as HTMLElement;
-                    if (actionPanel) actionPanel.style.opacity = '0';
-                  }}
+              <div className="calling-controls-bar">
+                <button
+                  className={`call-control-btn ${isMicOn ? 'call-control-btn--active' : ''}`}
+                  onClick={toggleMic}
+                  title={isMicOn ? 'Mute Mic' : 'Unmute Mic'}
                 >
-                  {/* Floating Action Popover */}
-                  <div 
-                    className="message-hover-actions"
-                    style={{
-                      position: 'absolute',
-                      top: '-16px',
-                      right: '24px',
-                      background: '#131A20',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '4px',
-                      opacity: 0,
-                      transition: 'opacity 0.15s ease',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                      zIndex: 10
-                    }}
-                  >
-                    {/* Reply Option */}
-                    <button
-                      onClick={() => setReplyingToMessage(msg)}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        padding: '4px 6px', fontSize: '13px', display: 'flex', alignItems: 'center',
-                        color: '#8E9297', borderRadius: '4px', transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.color = '#14AC7B';
-                        e.currentTarget.style.background = 'rgba(20, 172, 123, 0.1)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.color = '#8E9297';
-                        e.currentTarget.style.background = 'none';
-                      }}
-                      title="Reply to Message"
-                    >
-                      ↩️
-                    </button>
-
-                    {/* Heart Reaction */}
-                    <button
-                      onClick={() => handleToggleReaction(msg._id)}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        padding: '4px 6px', fontSize: '13px', display: 'flex', alignItems: 'center',
-                        color: '#8E9297', borderRadius: '4px', transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.color = '#ED4245';
-                        e.currentTarget.style.background = 'rgba(237, 66, 69, 0.1)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.color = '#8E9297';
-                        e.currentTarget.style.background = 'none';
-                      }}
-                      title="Love Message"
-                    >
-                      ❤️
-                    </button>
-
-                    {/* Edit Option (if sender & not a GIF) */}
-                    {isMyMessage && !contentIsGif && (
-                      <button
-                        onClick={() => {
-                          setEditingMessageId(msg._id);
-                          setEditingContent(msg.content);
-                        }}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          padding: '4px 6px', fontSize: '13px', display: 'flex', alignItems: 'center',
-                          color: '#8E9297', borderRadius: '4px', transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = '#14AC7B';
-                          e.currentTarget.style.background = 'rgba(20, 172, 123, 0.1)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = '#8E9297';
-                          e.currentTarget.style.background = 'none';
-                        }}
-                        title="Edit Message"
-                      >
-                        ✏️
-                      </button>
-                    )}
-
-                    {/* Delete Option (if sender) */}
-                    {isMyMessage && (
-                      <button
-                        onClick={() => handleDeleteMessage(msg._id)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          padding: '4px 6px', fontSize: '13px', display: 'flex', alignItems: 'center',
-                          color: '#8E9297', borderRadius: '4px', transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = '#ED4245';
-                          e.currentTarget.style.background = 'rgba(237, 66, 69, 0.1)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = '#8E9297';
-                          e.currentTarget.style.background = 'none';
-                        }}
-                        title="Delete Message"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                  </div>
-
-                  <img
-                    src={sender.avatar || fallbackAvatar}
-                    alt={sender.displayName || sender.username}
-                    className="chat-message-avatar"
-                  />
-                  <div className="chat-message-body">
-                    <div className="chat-message-meta">
-                      <span className="chat-message-author">{sender.displayName || sender.username}</span>
-                      <span className="chat-message-timestamp">{formatMessageTime(msg.createdAt)}</span>
-                    </div>
-
-                    {/* Editing mode toggle */}
-                    {editingMessageId === msg._id ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-                        <input 
-                          type="text" 
-                          value={editingContent} 
-                          onChange={(e) => setEditingContent(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEdit(msg._id);
-                            if (e.key === 'Escape') setEditingMessageId(null);
-                          }}
-                          style={{
-                            background: '#0D1114',
-                            border: '1px solid #14AC7B',
-                            borderRadius: '6px',
-                            padding: '8px 12px',
-                            color: '#fff',
-                            fontSize: '13px',
-                            outline: 'none',
-                            width: '100%',
-                            boxSizing: 'border-box'
-                          }}
-                          autoFocus
-                        />
-                        <span style={{ fontSize: '11px', color: '#8E9297' }}>
-                          escape to <span style={{ color: '#ED4245', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setEditingMessageId(null)}>cancel</span> • enter to <span style={{ color: '#14AC7B', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => handleSaveEdit(msg._id)}>save</span>
-                        </span>
-                      </div>
-                    ) : contentIsGif ? (
-                      <div style={{ marginTop: '8px', borderRadius: '8px', overflow: 'hidden', maxWidth: '320px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <img 
-                          src={msg.content} 
-                          alt="Giphy GIF" 
-                          style={{ width: '100%', maxHeight: '200px', objectFit: 'contain', display: 'block' }} 
-                        />
-                      </div>
-                    ) : (
-                      <p className="chat-message-text" style={{ whiteSpace: 'pre-wrap' }}>
-                        {msg.content}
-                        {msg.isEdited && (
-                          <span style={{ fontSize: '9.5px', color: '#72767D', marginLeft: '6px', userSelect: 'none', fontStyle: 'italic' }}>(edited)</span>
-                        )}
-                      </p>
-                    )}
-
-                    {/* Render Attachments */}
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                        {msg.attachments.map((att: any, attIdx: number) => {
-                          if (att.fileType === 'image') {
-                            return (
-                              <div key={attIdx} style={{ borderRadius: '12px', overflow: 'hidden', maxWidth: '400px', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                <img 
-                                  src={att.url} 
-                                  alt={att.fileName || 'Attachment'} 
-                                  style={{ width: '100%', maxHeight: '350px', objectFit: 'contain', display: 'block', cursor: 'pointer' }}
-                                  onClick={() => window.open(att.url, '_blank')}
-                                />
-                              </div>
-                            );
-                          } else if (att.fileType === 'video') {
-                            return (
-                              <div key={attIdx} style={{ borderRadius: '12px', overflow: 'hidden', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                                <video 
-                                  src={att.url} 
-                                  controls 
-                                  style={{ width: '100%', maxHeight: '360px', display: 'block' }} 
-                                />
-                              </div>
-                            );
-                          } else {
-                            return (
-                              <div key={attIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#0D1114', padding: '12px', borderRadius: '8px', maxWidth: '320px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                                <span style={{ fontSize: '24px' }}>📄</span>
-                                <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                  <a href={att.url} target="_blank" rel="noopener noreferrer" style={{ color: '#14AC7B', textDecoration: 'none', fontWeight: 'bold', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {att.fileName || 'Download File'}
-                                  </a>
-                                  <span style={{ fontSize: '11px', color: '#8E9297' }}>
-                                    {att.fileSize ? `${(att.fileSize / 1024 / 1024).toFixed(2)} MB` : 'Unknown size'}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          }
-                        })}
-                      </div>
-                    )}
-
-                    {/* Heart Reactions Badge Array */}
-                    {msg.reactions && msg.reactions.length > 0 && (
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
-                        {msg.reactions.map((reaction: any, rIdx: number) => {
-                          const reactedByMe = reaction.users && reaction.users.includes(currentUserId);
-                          return (
-                            <div 
-                              key={rIdx}
-                              onClick={() => handleToggleReaction(msg._id)}
-                              style={{
-                                background: reactedByMe ? 'rgba(20, 172, 123, 0.15)' : '#0D1114',
-                                border: reactedByMe ? '1px solid #14AC7B' : '1px solid rgba(255,255,255,0.05)',
-                                borderRadius: '6px',
-                                padding: '2px 8px',
-                                fontSize: '12px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                cursor: 'pointer',
-                                userSelect: 'none',
-                                transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#14AC7B';
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!reactedByMe) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
-                              }}
-                            >
-                              <span>{reaction.emoji}</span>
-                              <span style={{ fontSize: '10px', color: reactedByMe ? '#14AC7B' : '#8E9297', fontWeight: 'bold' }}>
-                                {(reaction.users ? reaction.users.length : 0) + (reaction.anonymousReactors ? reaction.anonymousReactors.length : 0)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  {isMicOn ? <Mic size={20} /> : <MicOff size={20} />}
+                </button>
+                
+                <button
+                  className={`call-control-btn ${isCameraOn ? 'call-control-btn--active' : ''}`}
+                  onClick={toggleCamera}
+                  title={isCameraOn ? 'Turn Camera Off' : 'Turn Camera On'}
+                >
+                  {isCameraOn ? <Camera size={20} /> : <CameraOff size={20} />}
+                </button>
+ 
+                <button
+                  className={`call-control-btn ${isScreenSharing ? 'call-control-btn--active' : ''}`}
+                  onClick={isScreenSharing ? stopScreenShare : shareScreen}
+                  title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+                >
+                  <Monitor size={20} />
+                </button>
+ 
+                <button
+                  className="call-control-btn call-control-btn--danger"
+                  onClick={handleEndCall}
+                  title="Hang Up"
+                >
+                  <PhoneOff size={20} color="#fff" />
+                </button>
               </div>
-            );
-          })
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Floating Giphy Search Popover */}
-      {giphyOpen && (
-        <div style={{
-          position: 'absolute',
-          bottom: '80px',
-          right: '20px',
-          width: '320px',
-          height: '400px',
-          background: '#131A20',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '12px',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-          zIndex: 999,
-          overflow: 'hidden'
-        }}>
-          {/* Popover Header */}
-          <div style={{
-            padding: '12px',
-            borderBottom: '1px solid rgba(255,255,255,0.05)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: '#171E24'
-          }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>⚡ GIPHY search</span>
-            <button 
-              onClick={() => {
-                setGiphyOpen(false);
-                setGiphySearch('');
-              }}
-              style={{
-                background: 'none', border: 'none', color: '#8E9297',
-                cursor: 'pointer', fontSize: '14px', fontWeight: 'bold'
-              }}
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Search bar input */}
-          <div style={{ padding: '10px 12px', background: '#131A20' }}>
-            <input 
-              type="text"
-              placeholder="Search funny, reactions, moods..."
-              value={giphySearch}
-              onChange={(e) => setGiphySearch(e.target.value)}
-              style={{
-                width: '100%',
-                background: '#0D1114',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '6px',
-                padding: '8px 12px',
-                color: '#fff',
-                fontSize: '13px',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-              autoFocus
-            />
-          </div>
-
-          {/* Grid results */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '4px 12px 12px 12px',
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '8px',
-            background: '#131A20'
-          }}>
-            {loadingGifs ? (
-              <div style={{ gridColumn: '1 / span 2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8E9297', height: '100%' }}>
-                <span>🔍 Fetching GIFs...</span>
-              </div>
-            ) : gifs.length === 0 ? (
-              <div style={{ gridColumn: '1 / span 2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8E9297', height: '100%' }}>
-                <span>No GIFs found</span>
-              </div>
-            ) : (
-              gifs.map((gif: any) => {
-                const gifUrl = gif.images?.fixed_width?.url;
-                if (!gifUrl) return null;
-                return (
-                  <img 
-                    key={gif.id}
-                    src={gifUrl}
-                    alt={gif.title || 'GIF'}
-                    onClick={() => handleSendGif(gifUrl)}
-                    style={{
-                      width: '100%',
-                      height: '110px',
-                      objectFit: 'cover',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.04)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  />
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Typing indicators */}
-      {typingUsers.length > 0 && (
-        <div style={{
-          padding: '0 20px 4px 20px',
-          fontSize: '11px',
-          color: '#FAA61A',
-          fontStyle: 'italic',
-          background: 'transparent'
-        }}>
-          {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
-        </div>
-      )}
-
-      {/* CSS Animation for upload spinner */}
-      <style>{`
-        @keyframes upload-spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-
-      {/* Uploading progress and error notifications */}
-      {(uploading || uploadError) && (
-        <div style={{
-          padding: '8px 16px',
-          margin: '0 20px 8px 20px',
-          borderRadius: '8px',
-          fontSize: '13px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: uploadError ? 'rgba(237, 66, 69, 0.1)' : 'rgba(20, 172, 123, 0.1)',
-          border: uploadError ? '1px solid #ED4245' : '1px solid #14AC7B',
-          color: uploadError ? '#ED4245' : '#14AC7B',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {!uploadError && <span style={{
-              display: 'inline-block',
-              width: '14px',
-              height: '14px',
-              border: '2px solid transparent',
-              borderTopColor: '#14AC7B',
-              borderRadius: '50%',
-              animation: 'upload-spin 0.8s linear infinite'
-            }} />}
-            <span>{uploadError || uploadProgressText}</span>
-          </div>
-          {uploadError && (
-            <button 
-              onClick={() => setUploadError('')}
-              style={{ background: 'none', border: 'none', color: '#ED4245', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Selected/uploaded attachments preview list */}
-      {selectedAttachments.length > 0 && (
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          flexWrap: 'wrap',
-          padding: '12px',
-          background: '#090D0F',
-          borderRadius: '8px',
-          margin: '0 20px 8px 20px',
-          border: '1px solid rgba(255,255,255,0.05)'
-        }}>
-          {selectedAttachments.map((att, idx) => (
-            <div key={idx} style={{
-              position: 'relative',
-              width: '100px',
-              height: '100px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              background: '#0D1114',
-              border: '1px solid rgba(255,255,255,0.1)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: 'center',
-              padding: '4px'
-            }}>
-              {att.fileType === 'image' ? (
-                <img 
-                  src={att.url} 
-                  alt={att.fileName} 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                />
-              ) : att.fileType === 'video' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '24px' }}>🎬</span>
-                  <span style={{ fontSize: '10px', color: '#8E9297', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '90px' }}>
-                    {att.fileName}
-                  </span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '24px' }}>📄</span>
-                  <span style={{ fontSize: '10px', color: '#8E9297', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '90px' }}>
-                    {att.fileName}
-                  </span>
-                </div>
-              )}
-              {/* Delete button */}
-              <button
-                onClick={() => setSelectedAttachments((prev) => prev.filter((_, i) => i !== idx))}
-                style={{
-                  position: 'absolute',
-                  top: '4px',
-                  right: '4px',
-                  background: 'rgba(0, 0, 0, 0.7)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: '18px',
-                  height: '18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px',
-                  cursor: 'pointer',
-                  padding: 0
-                }}
-              >
-                ✕
-              </button>
             </div>
-          ))}
-        </div>
-      )}
-
-
-      {/* Replying banner */}
-      {replyingToMessage && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'rgba(20, 172, 123, 0.08)',
-          borderLeft: '4px solid #14AC7B',
-          padding: '8px 16px',
-          fontSize: '13px',
-          color: '#8E9297',
-          borderTopLeftRadius: '8px',
-          borderTopRightRadius: '8px',
-          margin: '0 20px -10px 20px',
-          zIndex: 10,
-          position: 'relative'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>Replying to</span>
-            <strong style={{ color: '#fff' }}>
-              @{replyingToMessage.sender?.displayName || replyingToMessage.sender?.username}
-            </strong>
-            <span style={{
-              opacity: 0.6,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: '250px'
-            }}>
-              {isGifUrl(replyingToMessage.content) ? '[GIF]' : replyingToMessage.content}
-            </span>
-          </div>
-          <button 
-            onClick={() => setReplyingToMessage(null)}
-            style={{
-              background: 'none', border: 'none', color: '#8E9297',
-              cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center'
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Message input */}
-      <div className="chat-input-bar">
-        <input 
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
-        />
-
-        <button 
-          className="chat-input-add-btn" 
-          aria-label="Add attachment"
-          onClick={handlePlusClick}
-          disabled={uploading}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M8 0C3.5888 0 0 3.5888 0 8.00001C0 12.4112 3.5888 16 8 16C12.4112 16 16 12.4112 16 8.00001C16 3.5888 12.4112 0 8 0ZM12 8.80001H8.8V12H7.2V8.80001H4V7.20001H7.2V4H8.8V7.20001H12V8.80001Z"
-              fill="#8E9297"
-            />
-          </svg>
-        </button>
-
-        <input
-          className="chat-input-field"
-          type="text"
-          placeholder={`Message ${recipientName}`}
-          value={inputValue}
-          onChange={handleInputChange}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSendMessage();
-          }}
-          aria-label={`Message ${recipientName}`}
-        />
-
-        <div className="chat-input-actions">
-          {/* GIF */}
-          <button 
-            className="chat-input-action-btn" 
-            aria-label="GIF"
-            onClick={() => setGiphyOpen(!giphyOpen)}
-            style={{
-              background: giphyOpen ? 'rgba(20, 172, 123, 0.15)' : 'none',
-              borderRadius: '6px',
-              padding: '4px',
-              transition: 'background 0.2s',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <svg width="18" height="15" viewBox="0 0 18 15" fill="none">
-              <path
-                d="M1.4702 0C0.658231 0 0 0.671573 0 1.5V13.5C0 14.3284 0.65823 15 1.4702 15H16.1722C16.9842 15 17.6424 14.3284 17.6424 13.5V1.5C17.6424 0.671573 16.9842 0 16.1722 0H1.4702ZM7.17784 7.086V10.11C6.54272 10.533 5.79291 10.767 4.9549 10.767C3.02306 10.767 1.9557 9.471 1.9557 7.554C1.9557 5.628 3.11127 4.323 4.99019 4.323C5.73999 4.323 6.36629 4.503 6.85146 4.782L6.64857 6.123C6.18987 5.826 5.65177 5.592 5.02547 5.592C3.97575 5.592 3.46412 6.384 3.46412 7.545C3.46412 8.715 3.99339 9.534 5.04311 9.534C5.37832 9.534 5.61649 9.462 5.86348 9.336V8.229H4.72555V7.086H7.17784ZM8.489 4.44H9.99743V10.65H8.489V4.44ZM15.0492 4.44V5.727H12.9057V6.996H14.5994V8.283H12.9057V10.65H11.4061V4.44H15.0492Z"
-                fill={giphyOpen ? '#14AC7B' : '#8E9297'}
-              />
-            </svg>
-          </button>
-
-          {/* Emoji */}
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <button 
-              className="chat-input-action-btn" 
-              aria-label="Emoji"
-              onClick={() => setEmojiOpen(!emojiOpen)}
-              style={{
-                background: emojiOpen ? 'rgba(20, 172, 123, 0.15)' : 'none',
-                borderRadius: '6px',
-                padding: '4px',
-                transition: 'background 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
-                <path
-                  d="M8.5 0C3.80558 0 0 3.80558 0 8.5C0 13.1944 3.80558 17 8.5 17C13.1944 17 17 13.1944 17 8.5C17 3.80558 13.1944 0 8.5 0Z"
-                  fill={emojiOpen ? '#14AC7B' : '#8E9297'}
-                />
-                <path
-                  d="M8.5 9.91674C6.78919 9.91674 5.65418 9.71741 4.25032 9.44449C3.92967 9.38262 3.30591 9.44449 3.30591 10.3889C3.30591 12.2778 5.47568 14.6389 8.5002 14.6389C11.5243 14.6389 13.6945 12.2778 13.6945 10.3889C13.6945 9.44449 13.0708 9.38211 12.7501 9.44449C11.3463 9.71741 10.2108 9.91674 8.5 9.91674Z"
-                  fill="#40444B"
-                />
-                <path
-                  d="M4.25 10.3889C4.25 10.3889 5.66667 10.8611 8.5 10.8611C11.3333 10.8611 12.75 10.3889 12.75 10.3889C12.75 10.3889 11.8056 12.2778 8.5 12.2778C5.19444 12.2778 4.25 10.3889 4.25 10.3889Z"
-                  fill={emojiOpen ? '#14AC7B' : '#8E9297'}
-                />
-                <circle cx="5.85703" cy="7.52779" r="1.18056" fill="#40444B" />
-                <circle cx="11.1432" cy="7.52779" r="1.18056" fill="#40444B" />
-              </svg>
-            </button>
-
-            {emojiOpen && (
-              <div style={{
-                position: 'absolute',
-                bottom: '40px',
-                right: '0',
-                width: '280px',
-                background: '#131A20',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-                zIndex: 999,
-                padding: '12px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '10px',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  paddingBottom: '8px'
-                }}>
-                  <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>😀 Select Emoji</span>
-                  <button 
-                    onClick={() => setEmojiOpen(false)}
-                    style={{ background: 'none', border: 'none', color: '#8E9297', cursor: 'pointer', fontSize: '13px' }}
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '240px', overflowY: 'auto' }}>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#8E9297', marginBottom: '6px', fontWeight: 'bold', textTransform: 'uppercase' }}>Smileys</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
-                      {['😀', '😂', '🤣', '😊', '🥰', '😍', '😘', '😜', '😎', '🤔', '🙄', '😭'].map(emoji => (
-                        <button
-                          key={emoji}
-                          onClick={() => handleAddEmoji(emoji)}
-                          style={{
-                            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
-                            padding: '4px', borderRadius: '6px', transition: 'background 0.2s',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#8E9297', marginBottom: '6px', fontWeight: 'bold', textTransform: 'uppercase' }}>Gestures & Icons</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
-                      {['👍', '👎', '👊', '✌️', '👏', '🙌', '🔥', '✨', '🎉', '💯', '💡', '🚀'].map(emoji => (
-                        <button
-                          key={emoji}
-                          onClick={() => handleAddEmoji(emoji)}
-                          style={{
-                            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
-                            padding: '4px', borderRadius: '6px', transition: 'background 0.2s',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#8E9297', marginBottom: '6px', fontWeight: 'bold', textTransform: 'uppercase' }}>Hearts & Symbols</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px' }}>
-                      {['❤️', '💖', '💝', '💕', '⭐', '👀'].map(emoji => (
-                        <button
-                          key={emoji}
-                          onClick={() => handleAddEmoji(emoji)}
-                          style={{
-                            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
-                            padding: '4px', borderRadius: '6px', transition: 'background 0.2s',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
-          <div className="chat-input-divider" />
-
-          {/* Send button */}
-          <button
-            className="chat-input-send-btn"
-            aria-label="Send Message"
-            onClick={handleSendMessage}
+          {/* Resize Notch / Drag Handle */}
+          <div
+            className="voice-resize-handle"
+            onMouseDown={handleResizeDragStart}
+            onTouchStart={handleResizeDragStart}
+            title="Drag to resize call/chat split"
           >
-            <svg width="18" height="18" viewBox="0 0 22 21" fill="none">
-              <path
-                d="M20.0239 10.9981L13.7051 11.609L12.0423 16.9269C11.9432 17.2413 12.0404 17.585 12.2906 17.8003C12.5399 18.0155 12.894 18.0609 13.1905 17.9164L21 11.2106C21.271 11.0784 21.4429 10.8036 21.4429 10.5024C21.4429 10.2012 21.271 9.92645 21 9.79425L13.1999 3.0836C12.9034 2.93914 12.5493 2.98446 12.3 3.19974C12.0498 3.41503 11.9526 3.75778 12.0517 4.07221L13.7145 9.39006L19.921 10.0019C20.1759 10.0274 20.3704 10.2417 20.3704 10.4976C20.3704 10.7535 20.1759 10.9678 19.921 10.9933L20.0239 10.9981Z"
-                fill="#14AC7B"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
+            <div style={{ display: 'flex', alignItems: 'center', flexDirection: 'column', gap: '3px' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} className="voice-resize-grip-bar" style={{
+                  width: '40px',
+                  height: '2px',
+                  borderRadius: '2px',
+                  background: 'rgba(255,255,255,0.18)',
+                  transition: 'background 0.2s',
+                }} />
+              ))}
+            </div>
+          </div>
+
+          {/* Chat content fills remaining space */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {renderChatContent()}
+          </div>
+        </>
+      ) : (
+        /* No active call — normal chat layout */
+        renderChatContent()
+      )}
     </section>
   );
 }
