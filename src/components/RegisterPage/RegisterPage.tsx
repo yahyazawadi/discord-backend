@@ -207,7 +207,7 @@ export default function RegisterPage() {
                 </div>
 
                 <button type="submit" className="register-btn" disabled={loading} style={{ marginTop: '20px' }}>
-                  {loading ? (wakingUp ? 'Waking up server (takes up to 1 min)...' : 'Registering...') : 'Register'}
+                  {loading ? 'Sending the email...' : 'Register'}
                 </button>
 
                 <p className="login-text" style={{ marginTop: '12px' }}>
