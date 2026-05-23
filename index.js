@@ -1,9 +1,10 @@
-import { httpServerHandler } from 'cloudflare:node';
 import express from 'express';
-import http from 'node:http';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import morgan from 'morgan';
+import http from 'http';
+import { Server } from 'socket.io';
+import { ExpressPeerServer } from 'peer';
 import rateLimit from 'express-rate-limit';
 import { customXss } from './middleware/xss.js';
 
@@ -15,40 +16,36 @@ import serverRoutes from './routes/serverRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import User from './models/User.js';
 import ServerModel from './models/Server.js';
+import Conversation from './models/Conversation.js';
+import Message from './models/Message.js';
 import inviteTrie from './utils/inviteTrie.js';
+import jwt from 'jsonwebtoken';
+import { broadcastMessageToRoom, broadcastMessageUpdateToRoom } from './utils/socketHelpers.js';
 import { join } from 'path';
 
-dotenv.config();
+const result = dotenv.config();
+console.log('Dotenv config result:', result);
+console.log('MONGODB_URI:', process.env.MONGODB_URI);
 
-// --- Cloudflare Workers Environment Patch ---
-try {
-  const cfWorkers = await import('cloudflare:workers');
-  if (cfWorkers && cfWorkers.env) {
-    console.log('📦 [Env Patch] Cloudflare environment bindings detected. Syncing with process.env...');
-    for (const [key, value] of Object.entries(cfWorkers.env)) {
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        process.env[key] = String(value);
-      }
-    }
-  }
-} catch (e) {
-  console.log('ℹ️ [Env Patch] Running in non-Cloudflare environment. Using standard process.env.');
-}
+// Connect to MongoDB
+connectDB().then(() => {
+  initializeDatabase();
+});
 
-const app = express();
-const server = http.createServer(app);
-
-// Initialize Database & Trie Cache
-const initializeDatabase = async () => {
+// Seed System User & Load Invite Cache
+async function initializeDatabase() {
   try {
     // 1. Seed System User
-    const systemUserExists = await User.findOne({ email: 'system@squad.chat' });
-    if (!systemUserExists) {
-      const systemUser = new User({
-        username: 'System',
+    let systemUser = await User.findOne({ isSystem: true });
+    if (!systemUser) {
+      // Create user with a pre-hashed password string to avoid runtime hashing if not needed,
+      // or save directly (pre-save hook will hash it).
+      systemUser = new User({
+        username: 'system',
         displayName: 'System',
-        email: 'system@squad.chat',
-        password: new mongoose.Types.ObjectId().toString(),
+        email: 'system@discord.local',
+        password: 'system_secure_placeholder_password_not_for_login',
+        birthdate: new Date(1970, 0, 1),
         isVerified: true,
         isSystem: true
       });
@@ -69,24 +66,77 @@ const initializeDatabase = async () => {
   } catch (error) {
     console.error('Error during database initialization:', error);
   }
-};
+}
 
-// Connect to MongoDB
-connectDB().then(() => {
-  initializeDatabase();
+const app = express();
+const server = http.createServer(app);
+
+// Initialize Socket.io
+export const io = new Server(server, {
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.startsWith('http://localhost:')) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  },
+});
+
+app.set('io', io);
+
+// Capture Socket.io's upgrade listener
+const socketIoUpgradeListener = server.listeners('upgrade')[0];
+console.log('[Upgrade Routing] Socket.io upgrade listener captured:', !!socketIoUpgradeListener);
+server.removeAllListeners('upgrade');
+
+// Initialize PeerJS Server
+const peerServer = ExpressPeerServer(server, {
+  debug: process.env.NODE_ENV !== 'production',
+  // NOTE: do NOT set path here ظ¤ we mount at /peerjs via app.use below.
+  // Setting path here AND mounting at /peerjs creates a double-path (/peerjs/peerjs).
+});
+
+// Use PeerJS router
+app.use('/peerjs', peerServer);
+
+// Capture PeerJS's upgrade listener
+const peerJsUpgradeListener = server.listeners('upgrade')[0];
+console.log('[Upgrade Routing] PeerJS upgrade listener captured:', !!peerJsUpgradeListener);
+server.removeAllListeners('upgrade');
+
+// Safely route upgrade events to prevent conflicts
+server.on('upgrade', (req, socket, head) => {
+  const url = req.url || '';
+  console.log(`[Upgrade Routing] Incoming upgrade request: ${url}`);
+  if (url.startsWith('/socket.io') && socketIoUpgradeListener) {
+    console.log('[Upgrade Routing] Routing upgrade to Socket.io');
+    socketIoUpgradeListener(req, socket, head);
+  } else if (url.startsWith('/peerjs') && peerJsUpgradeListener) {
+    console.log('[Upgrade Routing] Routing upgrade to PeerJS');
+    peerJsUpgradeListener(req, socket, head);
+  } else {
+    console.warn(`[Upgrade Routing] No listener matches URL: ${url}, destroying socket`);
+    socket.destroy();
+  }
 });
 
 // --- Middleware ---
+
+// DDoS / Rate Limiting (Increased to support high-frequency SPA real-time polling)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 2000,
+  max: process.env.NODE_ENV === 'development' ? 50000 : 2000,
   message: 'Too many requests from this IP, please try again later.',
 });
 app.use('/api', limiter);
 
-app.use(express.json({ limit: '10kb' }));
-app.use(customXss);
-
+// Security & Parsing
+app.use(express.json({ limit: '10kb' })); // Body parser & limit size
+app.use(customXss); // Sanitize data against XSS
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -96,498 +146,600 @@ app.use(cors({
     }
     return callback(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
 
-if (process.env.NODE_ENV !== 'production') {
-  app.use(morgan('dev'));
+// Serve static files from public directory
+app.use(express.static('public'));
+
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev')); // Logging
 }
-
-// Sync Cloudflare environment variables into process.env dynamically
-const syncCfEnv = async () => {
-  try {
-    const cfWorkers = await import('cloudflare:workers');
-    const envSource = cfWorkers.env || cfWorkers.default?.env || cfWorkers;
-    if (envSource) {
-      for (const [key, value] of Object.entries(envSource)) {
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-          process.env[key] = String(value);
-        }
-      }
-    }
-  } catch (e) {
-    // Ignore on non-Cloudflare environments
-  }
-};
-
-// --- Database Connection Middleware ---
-let dbConnectionPromise = null;
-let lastConnectionError = null;
-
-// Track database connection states globally
-mongoose.connection.on('error', (err) => {
-  lastConnectionError = err.message;
-});
-mongoose.connection.on('connected', () => {
-  lastConnectionError = null;
-});
-
-const ensureDbConnected = async (req, res, next) => {
-  // Sync Cloudflare environment variables on request in case of lazy initialization
-  await syncCfEnv();
-
-  const readyState = mongoose.connection.readyState;
-  console.log(`📡 [DB Middleware] Request: ${req.method} ${req.path} | Connection State: ${readyState}`);
-  
-  if (readyState === 1) {
-    return next();
-  }
-  
-  console.log(`🔌 [DB Middleware] Database not connected (State: ${readyState}). Awaiting/Initiating connection...`);
-  
-  if (!dbConnectionPromise) {
-    const rawUri = process.env.MONGODB_URI;
-    if (!rawUri) {
-      console.error('💥 [DB Middleware] Error: MONGODB_URI is undefined!');
-      return res.status(500).json({
-        success: false,
-        error: 'Database Configuration Error',
-        message: 'MONGODB_URI is not set in environment variables.'
-      });
-    }
-    
-    const maskedUri = rawUri.replace(/:([^@]+)@/, ':***@');
-    console.log(`🚀 [DB Middleware] Connecting to ${maskedUri}...`);
-    
-    dbConnectionPromise = mongoose.connect(rawUri, {
-      serverSelectionTimeoutMS: 8000,
-    });
-  }
-  
-  try {
-    await dbConnectionPromise;
-    console.log('✅ [DB Middleware] Connection established successfully!');
-    next();
-  } catch (error) {
-    console.error('💥 [DB Middleware] Failed to connect to MongoDB in request middleware:', error);
-    dbConnectionPromise = null; // Clear so next request retries
-    res.status(500).json({
-      success: false,
-      error: 'Database Connection Timeout/Failure',
-      message: error.message,
-      state: mongoose.connection.readyState
-    });
-  }
-};
-
-app.use('/api', ensureDbConnected);
 
 // --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/messages', messageRoutes);
 
-// Inlined landing page HTML to completely bypass filesystem reads (fs.stat is unsupported in serverless Workers)
-const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Squad Server - Active Node Runtime</title>
-  <!-- Modern Premium Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Plus+Jakarta+Sans:wght@300;400;600&display=swap" rel="stylesheet">
-  
-  <style>
-    :root {
-      --bg-color: #08090c;
-      --card-bg: rgba(17, 20, 28, 0.65);
-      --card-border: rgba(255, 255, 255, 0.07);
-      --text-primary: #ffffff;
-      --text-secondary: #94a3b8;
-      --accent-color: #5865F2;
-      --glow-color: rgba(88, 101, 242, 0.25);
-      --green-glow: #10b981;
-    }
+// Redirect direct invite links to the frontend with query param
+app.get('/invite/:inviteCode', (req, res) => {
+  const { inviteCode } = req.params;
+  res.redirect(`/?invite=${inviteCode.toUpperCase()}`);
+});
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
 
-    body {
-      background-color: var(--bg-color);
-      color: var(--text-primary);
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .bg-glow-1 {
-      position: absolute;
-      width: 500px;
-      height: 500px;
-      border-radius: 50%;
-      background: radial-gradient(circle, var(--glow-color) 0%, rgba(0,0,0,0) 70%);
-      top: -10%;
-      left: -10%;
-      z-index: 1;
-      filter: blur(80px);
-      animation: pulseGlow 15s infinite alternate;
-    }
-
-    .bg-glow-2 {
-      position: absolute;
-      width: 600px;
-      height: 600px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0,0,0,0) 70%);
-      bottom: -15%;
-      right: -10%;
-      z-index: 1;
-      filter: blur(100px);
-      animation: pulseGlow 20s infinite alternate;
-    }
-
-    .container {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      padding: 3rem 2.5rem;
-      border-radius: 24px;
-      width: 90%;
-      max-width: 480px;
-      text-align: center;
-      z-index: 10;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4),
-                  inset 0 1px 0 rgba(255, 255, 255, 0.1);
-      transform: translateY(0);
-      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-
-    .container:hover {
-      transform: translateY(-4px);
-      border-color: rgba(88, 101, 242, 0.3);
-      box-shadow: 0 24px 48px rgba(88, 101, 242, 0.15),
-                  inset 0 1px 0 rgba(255, 255, 255, 0.15);
-    }
-
-    .logo-container {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 1.5rem auto;
-      background: radial-gradient(135deg, #7c3aed 0%, var(--accent-color) 100%);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 8px 24px rgba(88, 101, 242, 0.4);
-      position: relative;
-    }
-
-    .logo-container::after {
-      content: '';
-      position: absolute;
-      inset: -2px;
-      border-radius: 22px;
-      background: linear-gradient(135deg, #a78bfa, #5865F2);
-      z-index: -1;
-      opacity: 0.5;
-    }
-
-    .logo-icon {
-      font-size: 2.2rem;
-      font-weight: 800;
-      font-family: 'Outfit', sans-serif;
-      background: linear-gradient(to bottom, #ffffff, #e2e8f0);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      letter-spacing: -1px;
-    }
-
-    h1 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 2.2rem;
-      font-weight: 800;
-      margin-bottom: 0.5rem;
-      letter-spacing: -0.5px;
-      background: linear-gradient(to right, #ffffff, #e2e8f0);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .server-status {
-      display: inline-flex;
-      align-items: center;
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      padding: 0.4rem 1rem;
-      border-radius: 100px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--green-glow);
-      margin-bottom: 2rem;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background-color: var(--green-glow);
-      border-radius: 50%;
-      margin-right: 0.5rem;
-      box-shadow: 0 0 10px var(--green-glow), 0 0 20px var(--green-glow);
-      animation: pulseStatus 2s infinite;
-    }
-
-    .info-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      margin-bottom: 2rem;
-      text-align: left;
-    }
-
-    .info-item {
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.03);
-      padding: 0.85rem 1rem;
-      border-radius: 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.9rem;
-    }
-
-    .info-label {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .info-value {
-      color: var(--text-primary);
-      font-weight: 600;
-      font-family: monospace;
-      font-size: 0.85rem;
-    }
-
-    .badge {
-      background: rgba(88, 101, 242, 0.15);
-      border: 1px solid rgba(88, 101, 242, 0.3);
-      color: #a5b4fc;
-      padding: 0.2rem 0.6rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-
-    .footer {
-      position: absolute;
-      bottom: 2rem;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      z-index: 10;
-      text-align: center;
-    }
-
-    .footer a {
-      color: var(--accent-color);
-      text-decoration: none;
-      font-weight: 600;
-      transition: color 0.2s;
-    }
-
-    .footer a:hover {
-      color: #818cf8;
-    }
-
-    @keyframes pulseStatus {
-      0% {
-        transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-      }
-      70% {
-        transform: scale(1);
-        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-      }
-      100% {
-        transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-      }
-    }
-
-    @keyframes pulseGlow {
-      0% {
-        transform: scale(1) translate(0, 0);
-        opacity: 0.8;
-      }
-      50% {
-        transform: scale(1.1) translate(3%, 5%);
-        opacity: 1;
-      }
-      100% {
-        transform: scale(1) translate(0, 0);
-        opacity: 0.8;
-      }
-    }
-  </style>
-</head>
-<body>
-
-  <div class="bg-glow-1"></div>
-  <div class="bg-glow-2"></div>
-
-  <div class="container">
-    <div class="logo-container">
-      <div class="logo-icon">S</div>
-    </div>
-    
-    <h1>Squad Server</h1>
-    <div class="server-status">
-      <span class="status-dot"></span>
-      Active Production Runtime
-    </div>
-
-    <!-- DB_STATUS_PLACEHOLDER -->
-
-    <div class="info-list">
-      <div class="info-item">
-        <span class="info-label">Environment</span>
-        <span class="badge">Cloudflare Workers</span>
-      </div>
-      <div class="info-item">
-        <span class="info-label">Compatibility</span>
-        <span class="info-value">NodeJS Native</span>
-      </div>
-      <div class="info-item">
-        <span class="info-label">Database</span>
-        <span class="info-value">MongoDB Cluster</span>
-      </div>
-      <div class="info-item">
-        <span class="info-label">Endpoints</span>
-        <span class="info-value" style="color: #6366f1;">/api/*</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="footer">
-    Powered by Cloudflare Workers &bull; <a href="https://github.com/yahyazawadi/squad" target="_blank">Squad Project</a>
-  </div>
-
-</body>
-</html>`;
-
-// Catch-all for non-API routes (Serve the beautiful landing page directly from memory)
-app.get(/.*/, async (req, res) => {
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ success: false, error: 'API route not found' });
-  }
-  
-  await syncCfEnv();
-  const readyState = mongoose.connection.readyState;
-  
-  // Proactively trigger background connection if idle and disconnected
-  if (readyState === 0 || readyState === 3) {
-    const rawUri = process.env.MONGODB_URI;
-    if (rawUri && !dbConnectionPromise) {
-      console.log('🔌 [Root Route] Triggering background connection...');
-      dbConnectionPromise = mongoose.connect(rawUri, {
-        serverSelectionTimeoutMS: 8000,
-      }).catch(err => {
-        console.error('💥 [Root Route] Background connection error:', err.message);
-        dbConnectionPromise = null;
-      });
-    }
-  }
-
-  let statusText = 'Disconnected';
-  let statusColor = '#ef4444'; // Red
-  let statusBg = 'rgba(239, 68, 68, 0.1)';
-  let borderColor = 'rgba(239, 68, 68, 0.15)';
-  
-  if (readyState === 1) {
-    statusText = 'Connected';
-    statusColor = '#10b981'; // Green
-    statusBg = 'rgba(16, 185, 129, 0.1)';
-    borderColor = 'rgba(16, 185, 129, 0.2)';
-  } else if (readyState === 2) {
-    statusText = 'Connecting';
-    statusColor = '#f59e0b'; // Amber
-    statusBg = 'rgba(245, 158, 11, 0.1)';
-    borderColor = 'rgba(245, 158, 11, 0.2)';
-  }
-
-  const rawUri = process.env.MONGODB_URI;
-  const uriStatus = rawUri 
-    ? `✅ Active (${rawUri.replace(/:([^@]+)@/, ':***@').substring(0, 45)}...)` 
-    : '❌ Missing / Undefined';
-
-  const activeHost = mongoose.connection.host || 'None';
-  const replicaSet = mongoose.connection.name || 'N/A';
-  
-  const errorLog = lastConnectionError 
-    ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); color: #f87171;"><strong>Error Log:</strong> ${lastConnectionError}</div>`
-    : '';
-
-  // Safe debugging: list keys only, never secrets!
-  const envKeys = Object.keys(process.env).filter(key => 
-    !['MONGODB_URI', 'JWT_SECRET', 'SMTP_PASS', 'R2_SECRET_ACCESS_KEY', 'GIPHY_API_KEY', 'R2_ACCESS_KEY_ID'].includes(key)
-  );
-
-  let cfKeys = [];
+// Secure GIPHY API Proxy Routes
+app.get('/api/giphy/search', async (req, res, next) => {
   try {
-    const cfWorkers = await import('cloudflare:workers');
-    const envSource = cfWorkers.env || cfWorkers.default?.env || cfWorkers;
-    if (envSource) {
-      cfKeys = Object.keys(envSource).filter(key => 
-        !['MONGODB_URI', 'JWT_SECRET', 'SMTP_PASS', 'R2_SECRET_ACCESS_KEY', 'GIPHY_API_KEY', 'R2_ACCESS_KEY_ID'].includes(key)
-      );
-    }
-  } catch (e) {
-    cfKeys = ['Error importing: ' + e.message];
+    const { q, limit, custom_key } = req.query;
+    const apiKey = custom_key || process.env.GIPHY_API_KEY || 'ExGGBvhojYdg1lK3gQrt6JZoMJbuAMYo';
+    const limitVal = limit || 20;
+    const url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(q || '')}&limit=${limitVal}&rating=g`;
+    const response = await fetch(url);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    next(err);
   }
+});
 
-  const dynamicDbConsole = `
-    <div class="db-status-monitor" style="margin: 20px 0; padding: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid ${borderColor}; border-radius: 12px; width: 100%; text-align: left; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <span style="font-weight: 600; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary);">Database Node Status</span>
-        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: ${statusBg}; color: ${statusColor}; transition: all 0.3s ease;">
-          <span style="width: 6px; height: 6px; border-radius: 50%; background: ${statusColor}; display: inline-block;"></span>
-          ${statusText}
-        </span>
-      </div>
-      <div style="font-family: monospace; font-size: 11px; color: #cbd5e1; line-height: 1.6; word-break: break-all;">
-        <div><strong style="color: #64748b;">URI Binding:</strong> ${uriStatus}</div>
-        <div><strong style="color: #64748b;">Database:</strong> ${replicaSet}</div>
-        <div><strong style="color: #64748b;">Active Host:</strong> ${activeHost}</div>
-        <div style="margin-top: 6px; font-size: 10px; color: #94a3b8;">
-          <strong>Process Env Keys:</strong> ${envKeys.join(', ') || 'None'}
-        </div>
-        <div style="font-size: 10px; color: #94a3b8;">
-          <strong>Cloudflare Env Keys:</strong> ${cfKeys.join(', ') || 'None'}
-        </div>
-        ${errorLog}
-      </div>
-    </div>
-  `;
+app.get('/api/giphy/trending', async (req, res, next) => {
+  try {
+    const { limit, custom_key } = req.query;
+    const apiKey = custom_key || process.env.GIPHY_API_KEY || 'ExGGBvhojYdg1lK3gQrt6JZoMJbuAMYo';
+    const limitVal = limit || 20;
+    const url = `https://api.giphy.com/v1/gifs/trending?api_key=${apiKey}&limit=${limitVal}&rating=g`;
+    const response = await fetch(url);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
 
-  let renderedHtml = htmlContent.replace('<!-- DB_STATUS_PLACEHOLDER -->', dynamicDbConsole);
-
-  res.setHeader('Content-Type', 'text/html');
-  res.send(renderedHtml);
+// Catch-all for SPA (Client-side routing)
+app.get(/.*/, (req, res) => {
+  res.sendFile(join(process.cwd(), 'public', 'index.html'));
 });
 
 // --- Error Handling ---
 app.use(notFound);
 app.use(errorHandler);
 
-// Export the HTTP server handler for Cloudflare Workers
-export default httpServerHandler(server);
+// --- Socket.io Logic ---
+const activeConnections = new Map(); // userId string -> Set of socket.id strings
+
+// In-memory voice room state: channelId -> Map<userId, { peerId, username, displayName, avatar }>
+const voiceRooms = new Map();
+
+// Evict a user from all active voice rooms (ensuring they can only be in one call at a time)
+const evictUserFromAllVoice = (userId) => {
+  const userIdStr = userId.toString();
+  console.log(`[Voice] Running eviction check for user: ${userIdStr}`);
+  for (const [channelId, participantsMap] of voiceRooms.entries()) {
+    if (participantsMap.has(userIdStr)) {
+      console.log(`[Voice] Evicting user ${userIdStr} from voice channel ${channelId}`);
+      participantsMap.delete(userIdStr);
+      if (participantsMap.size === 0) {
+        voiceRooms.delete(channelId);
+      }
+
+      const voiceRoom = `voice_${channelId}`;
+      io.to(voiceRoom).emit('user_left_voice', {
+        channelId,
+        userId: userIdStr
+      });
+
+      // Make all active sockets for this user leave the Socket.io room
+      const userSockets = activeConnections.get(userIdStr);
+      if (userSockets) {
+        userSockets.forEach(socketId => {
+          const s = io.sockets.sockets.get(socketId);
+          if (s) {
+            s.leave(voiceRoom);
+            if (s.currentVoiceChannel === channelId) {
+              s.currentVoiceChannel = null;
+            }
+          }
+        });
+      }
+    }
+  }
+};
+
+const broadcastPresence = async (userId, status) => {
+  try {
+    const userServers = await ServerModel.find({ 'members.user': userId });
+    userServers.forEach(srv => {
+      io.to(`server_${srv._id}`).emit('presence_update', { userId, status });
+    });
+
+    const userConversations = await Conversation.find({ participants: userId });
+    userConversations.forEach(conv => {
+      io.to(`conversation_${conv._id}`).emit('presence_update', { userId, status });
+    });
+  } catch (err) {
+    console.error('Error broadcasting presence:', err);
+  }
+};
+
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token || socket.handshake.query.token;
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      return next(new Error('Authentication error: User not found'));
+    }
+    socket.user = user;
+    next();
+  } catch (err) {
+    return next(new Error('Authentication error: Invalid token'));
+  }
+});
+
+io.on('connection', async (socket) => {
+  const userIdStr = socket.user._id.toString();
+  console.log(`User connected to Socket.io: ${socket.user.username} (${socket.id})`);
+
+  // Track connection
+  if (!activeConnections.has(userIdStr)) {
+    activeConnections.set(userIdStr, new Set());
+    await User.findByIdAndUpdate(socket.user._id, { systemStatus: 'online' });
+    socket.user.systemStatus = 'online';
+
+    // Broadcast presence: auto resolves dynamically
+    const resolvedStatus = socket.user.userStatusPreference === 'auto' ? 'online' : socket.user.userStatusPreference;
+    await broadcastPresence(userIdStr, resolvedStatus);
+  }
+  activeConnections.get(userIdStr).add(socket.id);
+
+  // Room joining events
+  socket.on('join_server', ({ serverId }) => {
+    if (serverId) {
+      socket.join(`server_${serverId}`);
+      console.log(`Socket ${socket.id} joined server room server_${serverId}`);
+    }
+  });
+
+  socket.on('leave_server', ({ serverId }) => {
+    if (serverId) {
+      socket.leave(`server_${serverId}`);
+      console.log(`Socket ${socket.id} left server room server_${serverId}`);
+    }
+  });
+
+  socket.on('join_channel', ({ channelId }) => {
+    if (channelId) {
+      socket.join(`channel_${channelId}`);
+      console.log(`Socket ${socket.id} joined channel room channel_${channelId}`);
+    }
+  });
+
+  socket.on('leave_channel', ({ channelId }) => {
+    if (channelId) {
+      socket.leave(`channel_${channelId}`);
+      console.log(`Socket ${socket.id} left channel room channel_${channelId}`);
+    }
+  });
+
+  socket.on('join_conversation', ({ conversationId }) => {
+    if (conversationId) {
+      socket.join(`conversation_${conversationId}`);
+      console.log(`Socket ${socket.id} joined conversation room conversation_${conversationId}`);
+    }
+  });
+
+  socket.on('leave_conversation', ({ conversationId }) => {
+    if (conversationId) {
+      socket.leave(`conversation_${conversationId}`);
+      console.log(`Socket ${socket.id} left conversation room conversation_${conversationId}`);
+    }
+  });
+
+  // Messaging event
+  socket.on('send_message', async ({ channelId, conversationId, content, attachments, isAnonymous, parentMessageId }) => {
+    try {
+      if (!content && (!attachments || attachments.length === 0)) {
+        return socket.emit('error', { message: 'Message content or attachments required' });
+      }
+
+      let serverId = null;
+      let anonymousSenderName = '';
+
+      if (channelId) {
+        // Verify channel/server membership
+        const server = await ServerModel.findOne({ 'categories.channels._id': channelId });
+        if (!server) {
+          return socket.emit('error', { message: 'Server or channel not found' });
+        }
+        const isMember = server.members.some(m => m.user && m.user.toString() === userIdStr);
+        if (!isMember) {
+          return socket.emit('error', { message: 'You are not a member of this server' });
+        }
+        serverId = server._id;
+
+        // Anonymous name resolution
+        if (isAnonymous) {
+          const contextId = server._id;
+          const freshUser = await User.findById(socket.user._id);
+          let anonRecord = freshUser.anonymousNames.find(n => n.contextId.toString() === contextId.toString());
+          if (anonRecord) {
+            anonymousSenderName = anonRecord.anonymousName;
+          } else {
+            const nouns = ['Penguin', 'Koala', 'Panda', 'Fox', 'Owl', 'Otter', 'Badger', 'Dolphin', 'Tiger', 'Lion'];
+            const adjectives = ['Curious', 'Happy', 'Clever', 'Swift', 'Sleepy', 'Quiet', 'Brave', 'Kind', 'Jolly'];
+            const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+            const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+            anonymousSenderName = `${randomAdj} ${randomNoun}`;
+
+            await User.findByIdAndUpdate(socket.user._id, {
+              $push: { anonymousNames: { contextId, anonymousName: anonymousSenderName } }
+            });
+          }
+        }
+      } else if (conversationId) {
+        // Verify DM conversation membership and block lists
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+          return socket.emit('error', { message: 'Conversation not found' });
+        }
+        const isParticipant = conversation.participants.some(p => p.toString() === userIdStr);
+        if (!isParticipant) {
+          return socket.emit('error', { message: 'You are not a participant in this conversation' });
+        }
+
+        // Check block lists of both participants
+        const participantA = await User.findById(conversation.participants[0]);
+        const _pBId = conversation.participants.find(p => p.toString() !== userIdStr) || conversation.participants[0];
+        const participantB = await User.findById(_pBId);
+
+        if (!participantA || !participantB) {
+          return socket.emit('error', { message: 'One of the participants no longer exists' });
+        }
+
+        const isBlockedA = participantA.blockedUsers.includes(participantB._id);
+        const isBlockedB = participantB.blockedUsers.includes(participantA._id);
+
+        if (isBlockedA || isBlockedB) {
+          return socket.emit('error', { message: 'Message delivery failed: User has blocked communication.' });
+        }
+      } else {
+        return socket.emit('error', { message: 'Either channelId or conversationId must be provided' });
+      }
+
+      // Save message
+      const newMessage = new Message({
+        server: serverId,
+        channel: channelId,
+        conversation: conversationId,
+        sender: socket.user._id,
+        content: content ? content.trim() : '',
+        attachments: attachments || [],
+        isAnonymous: !!isAnonymous,
+        anonymousSenderName: anonymousSenderName || undefined,
+        parentMessage: parentMessageId || undefined
+      });
+
+      await newMessage.save();
+      await newMessage.populate([
+        { path: 'sender', select: '_id username displayName avatar' },
+        { path: 'parentMessage', populate: { path: 'sender', select: '_id username displayName avatar' } }
+      ]);
+
+      // Broadcast via target room using targeted formatting
+      const room = channelId ? `channel_${channelId}` : `conversation_${conversationId}`;
+      await broadcastMessageToRoom(io, room, newMessage, !!channelId, serverId);
+
+    } catch (err) {
+      console.error('Error handling send_message:', err);
+      socket.emit('error', { message: 'Failed to process message' });
+    }
+  });
+
+  // Typing Indicator
+  socket.on('typing', ({ channelId, conversationId, isTyping }) => {
+    const room = channelId ? `channel_${channelId}` : `conversation_${conversationId}`;
+    socket.to(room).emit('user_typing', {
+      userId: socket.user._id,
+      username: socket.user.username,
+      channelId,
+      conversationId,
+      isTyping
+    });
+  });
+
+  // ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤
+  // ≡اآي╕ PeerJS Voice / Video Channel Signaling
+  // ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤ظ¤
+
+  /**
+   * join_voice ظ¤ user enters a voice/video channel.
+   * Payload: { channelId, peerId }
+   *
+   * 1. Verifies the user is a member of the parent server.
+   * 2. Joins the Socket.io voice room so they receive future events.
+   * 3. Sends the joining user the full list of existing participants
+   *    (so their client can call each existing peer).
+   * 4. Broadcasts the new participant's peerId to everyone already
+   *    in the room (so they can call back).
+   * 5. Records the participant in the voiceRooms in-memory map.
+   */
+  socket.on('join_voice', async ({ channelId, peerId }) => {
+    try {
+      if (!channelId || !peerId) {
+        return socket.emit('error', { message: 'join_voice requires channelId and peerId' });
+      }
+
+      // Verify server membership or DM conversation membership
+      let isMember = false;
+      const server = await ServerModel.findOne({ 'categories.channels._id': channelId });
+      if (server) {
+        isMember = server.members.some(m => m.user && m.user.toString() === userIdStr);
+      } else {
+        const conversation = await Conversation.findById(channelId);
+        if (conversation) {
+          isMember = conversation.participants.some(p => p.toString() === userIdStr);
+        }
+      }
+
+      if (!isMember) {
+        return socket.emit('error', { message: 'Access Denied: Not authorized for this voice room' });
+      }
+
+      // Evict user from any other call first
+      evictUserFromAllVoice(userIdStr);
+
+      const voiceRoom = `voice_${channelId}`;
+
+      // Initialise room map if needed
+      if (!voiceRooms.has(channelId)) {
+        voiceRooms.set(channelId, new Map());
+      }
+      const roomParticipants = voiceRooms.get(channelId);
+
+      // Build participant info for this user
+      const participantInfo = {
+        userId: userIdStr,
+        peerId,
+        username: socket.user.username,
+        displayName: socket.user.displayName || socket.user.username,
+        avatar: socket.user.avatar || null,
+      };
+
+      // ظّب Send the new joiner the current participant list BEFORE adding themselves
+      const existingParticipants = Array.from(roomParticipants.values());
+      socket.emit('voice_room_participants', {
+        channelId,
+        participants: existingParticipants,
+      });
+
+      // ظّة Broadcast the new peer to everyone already in the room
+      socket.to(voiceRoom).emit('user_joined_voice', {
+        channelId,
+        ...participantInfo,
+      });
+
+      // ظّت Join Socket.io room & record in-memory
+      socket.join(voiceRoom);
+      socket.currentVoiceChannel = channelId; // Track for anti-ghosting on disconnect
+      roomParticipants.set(userIdStr, participantInfo);
+
+      console.log(`≡اآي╕ ${socket.user.username} joined voice channel ${channelId} with peerId ${peerId}`);
+    } catch (err) {
+      console.error('Error handling join_voice:', err);
+      socket.emit('error', { message: 'Failed to join voice channel' });
+    }
+  });
+
+  /**
+   * leave_voice ظ¤ user explicitly leaves a voice/video channel.
+   * Payload: { channelId }
+   *
+   * Removes them from the voiceRooms map, leaves the Socket.io room,
+   * and broadcasts 'user_left_voice' to remaining participants.
+   */
+  socket.on('leave_voice', ({ channelId }) => {
+    if (!channelId) return;
+
+    const voiceRoom = `voice_${channelId}`;
+    const roomParticipants = voiceRooms.get(channelId);
+
+    if (roomParticipants) {
+      roomParticipants.delete(userIdStr);
+      // Clean up empty rooms
+      if (roomParticipants.size === 0) {
+        voiceRooms.delete(channelId);
+      }
+    }
+
+    socket.leave(voiceRoom);
+    socket.currentVoiceChannel = null;
+
+    // Notify remaining peers so they can tear down their WebRTC connections
+    io.to(voiceRoom).emit('user_left_voice', {
+      channelId,
+      userId: userIdStr,
+    });
+
+    console.log(`≡ا¤ç ${socket.user.username} left voice channel ${channelId}`);
+  });
+
+  socket.on('initiate_call', ({ conversationId, type }) => {
+    socket.to(`conversation_${conversationId}`).emit('incoming_call', {
+      conversationId,
+      callerId: userIdStr,
+      callerName: socket.user.displayName || socket.user.username,
+      callerAvatar: socket.user.avatar || null,
+      type
+    });
+  });
+
+  socket.on('decline_call', ({ conversationId }) => {
+    socket.to(`conversation_${conversationId}`).emit('call_declined', {
+      conversationId,
+      userId: userIdStr
+    });
+  });
+
+  // Reactions
+  socket.on('add_reaction', async ({ messageId, emoji, isAnonymous }) => {
+    try {
+      if (!messageId || !emoji) {
+        return socket.emit('error', { message: 'messageId and emoji are required' });
+      }
+
+      const message = await Message.findById(messageId);
+      if (!message) {
+        return socket.emit('error', { message: 'Message not found' });
+      }
+
+      // Verify access
+      let serverId = message.server;
+      if (message.server) {
+        const server = await ServerModel.findById(message.server);
+        if (!server) {
+          return socket.emit('error', { message: 'Access Denied: Server not found' });
+        }
+        const isMember = server.members.some(m => m.user && m.user.toString() === userIdStr);
+        if (!isMember) {
+          return socket.emit('error', { message: 'Access Denied: Not a server member' });
+        }
+      } else if (message.conversation) {
+        const conversation = await Conversation.findById(message.conversation);
+        if (!conversation) {
+          return socket.emit('error', { message: 'Access Denied: Conversation not found' });
+        }
+        const isParticipant = conversation.participants.some(p => p && p.toString() === userIdStr);
+        if (!isParticipant) {
+          return socket.emit('error', { message: 'Access Denied: Not a DM participant' });
+        }
+      }
+
+      // Toggle reaction logic
+      let reaction = message.reactions.find(r => r.emoji === emoji);
+      let isNew = false;
+      if (!reaction) {
+        reaction = { emoji, users: [], anonymousReactors: [] };
+        isNew = true;
+      }
+
+      const userIndex = reaction.users.findIndex(u => u && u.toString() === userIdStr);
+      const anonIndex = reaction.anonymousReactors ? reaction.anonymousReactors.findIndex(r => r.realUserId && r.realUserId.toString() === userIdStr) : -1;
+
+      if (userIndex > -1) {
+        reaction.users.splice(userIndex, 1);
+      } else if (anonIndex > -1) {
+        reaction.anonymousReactors.splice(anonIndex, 1);
+      } else {
+        if (isAnonymous) {
+          const contextId = serverId || message.conversation;
+          const freshUser = await User.findById(socket.user._id);
+          let anonRecord = freshUser.anonymousNames.find(n => n.contextId.toString() === contextId.toString());
+          let anonymousName = '';
+
+          if (anonRecord) {
+            anonymousName = anonRecord.anonymousName;
+          } else {
+            const nouns = ['Penguin', 'Koala', 'Panda', 'Fox', 'Owl', 'Otter', 'Badger', 'Dolphin', 'Tiger', 'Lion'];
+            const adjectives = ['Curious', 'Happy', 'Clever', 'Swift', 'Sleepy', 'Quiet', 'Brave', 'Kind', 'Jolly'];
+            const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+            const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+            anonymousName = `${randomAdj} ${randomNoun}`;
+
+            await User.findByIdAndUpdate(socket.user._id, {
+              $push: { anonymousNames: { contextId, anonymousName } }
+            });
+          }
+
+          reaction.anonymousReactors.push({ anonymousName, realUserId: socket.user._id });
+        } else {
+          reaction.users.push(socket.user._id);
+        }
+      }
+
+      if (isNew) {
+        message.reactions.push(reaction);
+      }
+
+      // Remove empty reactions
+      message.reactions = message.reactions.filter(r => r.users.length > 0 || r.anonymousReactors.length > 0);
+      await message.save();
+      await message.populate('sender', '_id username displayName avatar');
+
+      const room = message.channel ? `channel_${message.channel}` : `conversation_${message.conversation}`;
+      await broadcastMessageUpdateToRoom(io, room, message, !!message.server, message.server);
+
+    } catch (err) {
+      console.error('Error handling reaction:', err);
+      socket.emit('error', { message: 'Failed to process reaction' });
+    }
+  });
+
+  // Disconnect handler
+  socket.on('disconnect', async () => {
+    console.log(`User disconnected: ${socket.user.username} (${socket.id})`);
+
+    // ظ¤ظ¤ Anti-Ghosting: auto-evict from any active voice channel ظ¤ظ¤
+    const activeVoiceChannel = socket.currentVoiceChannel;
+    if (activeVoiceChannel) {
+      const voiceRoom = `voice_${activeVoiceChannel}`;
+      const roomParticipants = voiceRooms.get(activeVoiceChannel);
+      if (roomParticipants) {
+        roomParticipants.delete(userIdStr);
+        if (roomParticipants.size === 0) {
+          voiceRooms.delete(activeVoiceChannel);
+        }
+      }
+      // Notify remaining peers so they tear down the dead WebRTC connection
+      io.to(voiceRoom).emit('user_left_voice', {
+        channelId: activeVoiceChannel,
+        userId: userIdStr,
+      });
+      console.log(`≡اّ╗ Anti-ghost: removed ${socket.user.username} from voice channel ${activeVoiceChannel}`);
+    }
+
+    const userSockets = activeConnections.get(userIdStr);
+    if (userSockets) {
+      userSockets.delete(socket.id);
+      if (userSockets.size === 0) {
+        activeConnections.delete(userIdStr);
+        await User.findByIdAndUpdate(socket.user._id, { systemStatus: 'offline' });
+
+        // Broadcast presence update
+        const resolvedStatus = socket.user.userStatusPreference === 'auto' ? 'offline' : socket.user.userStatusPreference;
+        await broadcastPresence(userIdStr, resolvedStatus);
+      }
+    }
+  });
+});
+
+// --- Server Startup & Graceful Shutdown ---
+const PORT = process.env.PORT || 5001;
+
+server.listen(PORT, () => {
+  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+});
+
+// Graceful Shutdown handling (SIGTERM/SIGINT)
+const gracefulShutdown = () => {
+  console.log('Shutting down gracefully...');
+  server.close(() => {
+    console.log('HTTP/Socket/Peer server closed.');
+    mongoose.connection.close().then(() => {
+      console.log('MongoDB connection closed.');
+      process.exit(0);
+    }).catch((err) => {
+      console.error('Error closing MongoDB connection:', err);
+      process.exit(1);
+    });
+  });
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+// Trigger hot reload after port 5001 release
