@@ -1,3 +1,4 @@
+import { httpServerHandler } from 'cloudflare:node';
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -717,29 +718,7 @@ io.on('connection', async (socket) => {
   });
 });
 
-// --- Server Startup & Graceful Shutdown ---
-const PORT = process.env.PORT || 5001;
-
-server.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-});
-
-// Graceful Shutdown handling (SIGTERM/SIGINT)
-const gracefulShutdown = () => {
-  console.log('Shutting down gracefully...');
-  server.close(() => {
-    console.log('HTTP/Socket/Peer server closed.');
-    mongoose.connection.close().then(() => {
-      console.log('MongoDB connection closed.');
-      process.exit(0);
-    }).catch((err) => {
-      console.error('Error closing MongoDB connection:', err);
-      process.exit(1);
-    });
-  });
-};
-
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+// Export the HTTP server handler for Cloudflare Workers
+export default httpServerHandler(server);
 
 // Trigger hot reload after port 5001 release

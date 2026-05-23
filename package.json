@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "build": "esbuild index.js --bundle --platform=node --format=cjs --outfile=dist/index.cjs"
+    "build": "esbuild index.js --bundle --platform=node --format=cjs --outfile=dist/index.cjs --external:cloudflare:node"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1049.0",
