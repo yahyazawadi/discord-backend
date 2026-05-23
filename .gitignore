@@ -1,7 +1,4 @@
 .env
-server/.env
 node_modules/
-server/node_modules/
 dist/
-server/dist/
-
+frontend/
