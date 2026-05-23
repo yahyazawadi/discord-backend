@@ -201,12 +201,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 1,
-          googEchoCancellation: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true,
-          googAudioMirroring: false,
-          googAutoGainControl: true
+          channelCount: 1
         };
         const constraints: MediaStreamConstraints =
           callType === "video"

@@ -103,34 +103,31 @@ const VideoFeed = ({ stream, isLocal, isScreenShare, label, isDeafened }: { stre
 };
 
 const VoiceFeed = ({ participant, isLocal, isDeafened }: { participant: any; isLocal: boolean; isDeafened?: boolean }) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
   const avatar = participant.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${participant.username}`;
 
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el || !participant.stream) return;
-    el.srcObject = participant.stream;
-    el.volume = 1.0;
-    el.muted = !!isDeafened;
-    el.play().catch((err) => {
+    if (isLocal || !participant.stream) return;
+
+    console.log(`[VoiceFeed] Playing remote audio for ${participant.displayName || participant.username} via dynamic Audio`);
+    const audio = new Audio();
+    audio.srcObject = participant.stream;
+    audio.volume = 1.0;
+    audio.muted = !!isDeafened;
+
+    audio.play().catch((err) => {
       console.warn('[VoiceFeed] audio autoplay blocked, retrying on interaction:', err);
-      // Retry play on the next user gesture
-      const retry = () => { el.play().catch(() => {}); document.removeEventListener('click', retry); };
+      const retry = () => { audio.play().catch(() => {}); document.removeEventListener('click', retry); };
       document.addEventListener('click', retry, { once: true });
     });
-  }, [participant.stream, isDeafened]);
+
+    return () => {
+      audio.pause();
+      audio.srcObject = null;
+    };
+  }, [participant.stream, isLocal, isDeafened]);
 
   return (
     <div className="participant-card">
-      {/* Hidden audio element — plays the remote participant's audio stream */}
-      {!isLocal && (
-        <audio
-          ref={audioRef}
-          autoPlay
-          playsInline
-          controls={false}
-        />
-      )}
       <div className="participant-fallback-avatar">
         {participant.avatar ? (
           <img
