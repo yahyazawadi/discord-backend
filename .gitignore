@@ -1,4 +1,6 @@
 .env
+.dev.vars
 node_modules/
 dist/
 frontend/
+.wrangler/

@@ -71,17 +71,31 @@ async function initializeDatabase() {
 const app = express();
 const server = http.createServer(app);
 
+// Unified CORS origin checker to support localhost, Cloudflare Pages subdomains, and configured CLIENT_URL
+const corsOriginChecker = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  
+  const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
+  const isAllowed =
+    allowedOrigins.includes(origin) ||
+    allowedOrigins.includes('*') ||
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:') ||
+    origin.endsWith('.pages.dev') ||
+    origin === 'https://squad-cq5.pages.dev';
+
+  if (isAllowed) {
+    return callback(null, true);
+  }
+  
+  console.warn(`[CORS Warning] Request from blocked origin: ${origin}`);
+  return callback(new Error('Not allowed by CORS'));
+};
+
 // Initialize Socket.io
 export const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.startsWith('http://localhost:')) {
-        return callback(null, true);
-      }
-      return callback(new Error('Not allowed by CORS'));
-    },
+    origin: corsOriginChecker,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
   },
 });
@@ -138,14 +152,7 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10kb' })); // Body parser & limit size
 app.use(customXss); // Sanitize data against XSS
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    const allowedOrigins = [process.env.CLIENT_URL].filter(Boolean);
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.startsWith('http://localhost:')) {
-      return callback(null, true);
-    }
-    return callback(new Error('Not allowed by CORS'));
-  },
+  origin: corsOriginChecker,
   credentials: true,
 }));
 
