@@ -537,6 +537,24 @@ app.get(/.*/, async (req, res) => {
     ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); color: #f87171;"><strong>Error Log:</strong> ${lastConnectionError}</div>`
     : '';
 
+  // Safe debugging: list keys only, never secrets!
+  const envKeys = Object.keys(process.env).filter(key => 
+    !['MONGODB_URI', 'JWT_SECRET', 'SMTP_PASS', 'R2_SECRET_ACCESS_KEY', 'GIPHY_API_KEY', 'R2_ACCESS_KEY_ID'].includes(key)
+  );
+
+  let cfKeys = [];
+  try {
+    const cfWorkers = await import('cloudflare:workers');
+    const envSource = cfWorkers.env || cfWorkers.default?.env || cfWorkers;
+    if (envSource) {
+      cfKeys = Object.keys(envSource).filter(key => 
+        !['MONGODB_URI', 'JWT_SECRET', 'SMTP_PASS', 'R2_SECRET_ACCESS_KEY', 'GIPHY_API_KEY', 'R2_ACCESS_KEY_ID'].includes(key)
+      );
+    }
+  } catch (e) {
+    cfKeys = ['Error importing: ' + e.message];
+  }
+
   const dynamicDbConsole = `
     <div class="db-status-monitor" style="margin: 20px 0; padding: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid ${borderColor}; border-radius: 12px; width: 100%; text-align: left; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -550,6 +568,12 @@ app.get(/.*/, async (req, res) => {
         <div><strong style="color: #64748b;">URI Binding:</strong> ${uriStatus}</div>
         <div><strong style="color: #64748b;">Database:</strong> ${replicaSet}</div>
         <div><strong style="color: #64748b;">Active Host:</strong> ${activeHost}</div>
+        <div style="margin-top: 6px; font-size: 10px; color: #94a3b8;">
+          <strong>Process Env Keys:</strong> ${envKeys.join(', ') || 'None'}
+        </div>
+        <div style="font-size: 10px; color: #94a3b8;">
+          <strong>Cloudflare Env Keys:</strong> ${cfKeys.join(', ') || 'None'}
+        </div>
         ${errorLog}
       </div>
     </div>
