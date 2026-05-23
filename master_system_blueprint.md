@@ -254,6 +254,7 @@ const seedInviteCache = async () => {
 | **`/api/servers`** | `POST` | `{ name, icon, isPrivate }` | `protect` | Create server, assign owner, and auto-populate default channels. |
 | **`/api/servers`** | `GET` | None | `protect` | Fetch all servers the authenticated user is a member of. |
 | **`/api/servers/join/:inviteCode`** | `POST` | `inviteCode` param | `protect` | Instantly join a server using its unique invite code link (Bypasses private server locks). |
+| **`/api/servers/invite-details/:inviteCode`** | `GET` | `inviteCode` param | None | Publicly fetch basic server summary (name, icon, banner, owner, member counts) to render the landing page anonymously before logging in. |
 | **`/api/servers/:serverId`** | `GET` | `serverId` param | `optional-auth` | Fetch server details (name, icon, member counts, public channels). If `isPrivate: true` **and** the requester is not an authenticated member, returns `{ error: "Server is private" }` with a `403`. Authenticated members always receive full data. |
 | **`/api/servers/:serverId/join-direct`**| `POST` | `serverId` param | `protect` | Direct attempt to join by ID. If `isPrivate: true`, returns error: `"Server is private and you cannot join!"`. |
 | **`/api/servers/:serverId/leave`** | `POST` | `serverId` param | `protect` | Remove authenticated user from server member list. |
@@ -728,3 +729,35 @@ When a user sets their status to **`dnd` (Do Not Disturb)**, the client suppress
 * **Passive indicator only**: Silent red unread badge circles still appear in the sidebar.
 * **This matches Discord's production DND behaviour** and is intentional, not a bug.
 * Enforcement point: the `playSystemNotificationSound()` debouncer (§6.10) must check `userStatusPreference === 'dnd'` before playing any audio or triggering any desktop notification API call.
+
+### 🌐 4. Centralized REST Client Integration via Axios (`utils/api.ts`)
+To eliminate the brittle custom `API_BASE` definitions scattered across multiple files, the entire REST and file upload request pipeline has been fully refactored into a single central Axios client:
+* **The Client Instance**: Instantiated globally via `axios.create` with unified fallback boundaries matching dynamic dev (`http://localhost:5001/api`) vs. remote environments seamlessly.
+* **Automatic JWT Credentials Injection**: Installs a request interceptor that queries `localStorage.getItem('token')` dynamically and appends an `Authorization: Bearer <token>` header to all outgoing requests. React components no longer need to pass explicit token states.
+* **Session Expiration Guard**: Implements a response interceptor catching `401 Unauthorized` errors globally, providing warning triggers to user context stores.
+* **Error Normalization**: Standardizes request exception payloads on both client and backend, allowing safe, clean catch handling inside TSX handlers.
+
+### 🎭 5. Anonymous Invite Landing Page Routing
+To deliver a premium, seamless boarding experience for prospective users:
+* **No Pre-Authentication Gate**: Fetching invitation specifics is exposed publicly on `/api/servers/invite-details/:inviteCode` without requiring a valid JWT bearer.
+* **Landing Page Presentation**: Invitee candidates landing on `/invite/:inviteCode` instantly retrieve the host server's summary metadata (name, description, banner styling, host details, and total member counts) anonymously.
+* **Session-Aware Onboarding**:
+  * If the user already possesses an active session token, the UI renders an immediate `Accept Invite & Join` CTA.
+  * If the guest is anonymous (no active JWT token), the UI displays clear registration/sign-in options, storing the target `pendingInvite` code in `localStorage` to automatically resolve the membership link instantly upon successful credential verification.
+
+### 👞 6. Kicking & Membership Visibility Isolation
+To guarantee absolute safety, isolation, and security when moderators perform administrative actions:
+* **Real-time Eviction**: When an administrator kicks a member, the server strips their user ID from the server's `members` collection and forces their socket connections to leave all server/channel rooms.
+* **Visibility Deletion**: Since the member list resolves dynamically based on active membership arrays, the evicted user immediately loses read/write visibility. The server is dynamically removed from their sidebar lists, and all sub-channels vanish from view.
+* **UI Redirection Safety**: The frontend catches eviction triggers or active server list updates immediately, cleanly redirecting the evicted member's focus away from the deleted channels to the primary Direct Messages home feed to prevent UI errors or data leaks.
+
+### 🚀 7. Production Deployment Checklist
+Follow these protocols to successfully build, serve, and launch the application in production (e.g., Render, Railway, or Vercel):
+1. **Unified Single-Port Boot**: Ensure the Node.js server binds entirely to `process.env.PORT` with no hardcoded fallback port exceptions in production environments.
+2. **CORS Alignment**: Define `process.env.CLIENT_URL` inside the host settings matching the exact public Vercel/Render frontend domain to permit authenticated resource sharing.
+3. **Frontend Build Pipeline**: Compile the React client utilizing clean TypeScript builds (`npm run build`). Check that the compiled folder (`dist/` or `build/`) is properly provisioned.
+4. **Environment Variables Verification**: Check that all credentials (`MONGODB_URI`, `JWT_SECRET`, `GIPHY_API_KEY`, and Cloudflare R2 S3 secrets) are populated in the platform's Environment Settings dashboard before triggering the final deploy pipeline.
+5. **Cloudflare Workers Deployment**:
+   * Compile the server with `npm run build` inside the `server` directory to bundle all controllers, models, and dependencies into a single ESM/CJS file at `dist/index.cjs`.
+   * The server config leverages `wrangler.toml` specifying the entry point as `dist/index.cjs` and enabling Node compatibility with the `nodejs_compat` compatibility flag.
+   * Secure keys (like MongoDB URI, JWT Secrets, R2 storage buckets) should be uploaded safely as secrets using `wrangler secret put <NAME>` or configured directly inside the Cloudflare Dashboard to avoid committing credentials.

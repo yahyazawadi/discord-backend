@@ -1,0 +1,12 @@
+# wrangler.toml - Cloudflare Workers Configuration for Squad Backend
+name = "squad-server"
+main = "dist/index.cjs"
+compatibility_date = "2024-09-23"
+compatibility_flags = [ "nodejs_compat" ]
+
+[vars]
+NODE_ENV = "production"
+
+# Note: Set your MONGODB_URI, JWT_SECRET, CLIENT_URL, R2 credentials, GIPHY_API_KEY, 
+# and SMTP credentials as Environment Variables in the Cloudflare Dashboard, or via
+# wrangler secret put <SECRET_NAME> to keep them secure.
