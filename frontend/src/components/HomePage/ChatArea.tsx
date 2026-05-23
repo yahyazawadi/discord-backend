@@ -248,7 +248,6 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<any>(null);
-  const token = localStorage.getItem('token');
 
   // Currently logged in user context
   const [currentUser] = useState<any>(() => {

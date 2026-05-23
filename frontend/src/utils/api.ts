@@ -1,8 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001/api`
-  : `${window.location.origin}/api`;
+const API_BASE = 'https://squad-j5q6.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_BASE,

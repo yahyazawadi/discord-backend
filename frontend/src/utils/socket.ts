@@ -1,8 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:5001`
-  : window.location.origin;
+const SOCKET_URL = 'https://squad-j5q6.onrender.com';
 
 let socket: Socket | null = null;
 
