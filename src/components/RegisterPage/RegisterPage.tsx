@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState(1); // 1 = Register Form, 2 = OTP Verification
   const [loading, setLoading] = useState(false);
+  const [wakingUp, setWakingUp] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [sentOtp, setSentOtp] = useState('');
@@ -44,6 +45,13 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     setMessage('');
+    setWakingUp(false);
+
+    // Setup timer to detect slow response (server wake-up)
+    const timer = setTimeout(() => {
+      setWakingUp(true);
+    }, 2500);
+
     try {
       const response = await api.post('/auth/register', { email, username, password, birthdate });
       const data = response.data;
@@ -60,7 +68,9 @@ export default function RegisterPage() {
       const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Is the server running?';
       setError(errMsg);
     } finally {
+      clearTimeout(timer);
       setLoading(false);
+      setWakingUp(false);
     }
   };
 
@@ -197,7 +207,7 @@ export default function RegisterPage() {
                 </div>
 
                 <button type="submit" className="register-btn" disabled={loading} style={{ marginTop: '20px' }}>
-                  {loading ? 'Registering...' : 'Register'}
+                  {loading ? (wakingUp ? 'Waking up server (takes up to 1 min)...' : 'Registering...') : 'Register'}
                 </button>
 
                 <p className="login-text" style={{ marginTop: '12px' }}>

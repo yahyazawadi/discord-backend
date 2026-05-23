@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Squad Server Wakener & Status Hub</title>
+  <link rel="icon" type="image/svg+xml" href="./public/favicon.svg">
+  <!-- Premium Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #0D1114;
+      --card-bg: rgba(19, 26, 32, 0.85);
+      --border-color: rgba(194, 206, 214, 0.06);
+      --primary: #14AC7B;
+      --primary-hover: #119c6e;
+      --primary-glow: rgba(20, 172, 123, 0.25);
+      --danger: #f23f43;
+      --danger-glow: rgba(242, 63, 67, 0.2);
+      --warning: #f0b232;
+      --warning-glow: rgba(240, 178, 50, 0.2);
+      --text: #C2CED6;
+      --text-muted: rgba(194, 206, 214, 0.5);
+      --white: #FFFFFF;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Radial glows for beautiful background depth */
+    .bg-glow-1 {
+      position: absolute;
+      top: -10%;
+      right: -10%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(20, 172, 123, 0.05) 0%, rgba(20, 172, 123, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(40px);
+    }
+
+    .bg-glow-2 {
+      position: absolute;
+      bottom: -10%;
+      left: -10%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(13, 135, 96, 0.03) 0%, rgba(13, 135, 96, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(40px);
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 580px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 48px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      text-align: center;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .logo-container {
+      margin-bottom: 28px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .logo-glow-wrapper {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .logo-shadow {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--primary);
+      filter: blur(20px);
+      opacity: 0.15;
+      z-index: -1;
+      transition: opacity 0.5s ease, background 0.5s ease;
+    }
+
+    .logo-icon {
+      width: 72px;
+      height: auto;
+      fill: var(--primary);
+      transition: fill 0.5s ease;
+    }
+
+    .title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--white);
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 36px;
+      line-height: 1.5;
+    }
+
+    /* Status Grid */
+    .status-panel {
+      background: rgba(9, 13, 16, 0.5);
+      border: 1px solid rgba(194, 206, 214, 0.04);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(194, 206, 214, 0.04);
+    }
+
+    .status-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .status-label {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* Dynamic Badges */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 99px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: rgba(194, 206, 214, 0.05);
+      color: var(--text-muted);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .status-badge::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: background 0.3s ease;
+    }
+
+    /* SLEEPING STATE */
+    .state-sleeping {
+      background: rgba(242, 63, 67, 0.1);
+      color: var(--danger);
+      box-shadow: 0 0 15px rgba(242, 63, 67, 0.05);
+      border: 1px solid rgba(242, 63, 67, 0.15);
+    }
+    .state-sleeping::before {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+      animation: pulse 1.8s infinite;
+    }
+
+    /* WAKING STATE */
+    .state-waking {
+      background: rgba(240, 178, 50, 0.1);
+      color: var(--warning);
+      box-shadow: 0 0 15px rgba(240, 178, 50, 0.05);
+      border: 1px solid rgba(240, 178, 50, 0.15);
+    }
+    .state-waking::before {
+      background: var(--warning);
+      box-shadow: 0 0 8px var(--warning);
+      animation: pulse 1.2s infinite;
+    }
+
+    /* AWAKE STATE */
+    .state-awake {
+      background: rgba(20, 172, 123, 0.1);
+      color: var(--primary);
+      box-shadow: 0 0 15px rgba(20, 172, 123, 0.08);
+      border: 1px solid rgba(20, 172, 123, 0.15);
+    }
+    .state-awake::before {
+      background: var(--primary);
+      box-shadow: 0 0 8px var(--primary);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.4; }
+      50% { opacity: 1; }
+      100% { opacity: 0.4; }
+    }
+
+    .latency-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--white);
+    }
+
+    /* Controls & Buttons */
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .btn-wake {
+      width: 100%;
+      height: 52px;
+      background: var(--primary);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 12px rgba(20, 172, 123, 0.2);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-wake:hover:not(:disabled) {
+      background-color: var(--primary-hover);
+      box-shadow: 0 6px 20px var(--primary-glow);
+      transform: translateY(-1.5px);
+    }
+
+    .btn-wake:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .btn-wake:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid rgba(255, 255, 255, 0.25);
+      border-top-color: var(--white);
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .btn-wake.loading .spinner {
+      display: block;
+    }
+    .btn-wake.loading .btn-text {
+      display: none;
+    }
+
+    /* Keep Alive Toggle Option */
+    .keep-alive-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(194, 206, 214, 0.02);
+      border: 1px solid rgba(194, 206, 214, 0.03);
+      padding: 14px 20px;
+      border-radius: 12px;
+      text-align: left;
+    }
+
+    .keep-alive-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .keep-alive-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Premium Toggle Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(194, 206, 214, 0.15);
+      transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 34px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: var(--text);
+      transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--primary);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+      background-color: var(--white);
+    }
+
+    /* Console Logger */
+    .log-section {
+      text-align: left;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .log-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--white);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .clear-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .clear-btn:hover {
+      color: var(--danger);
+    }
+
+    .log-container {
+      background: #06090B;
+      border: 1px solid rgba(194, 206, 214, 0.04);
+      border-radius: 12px;
+      padding: 16px;
+      height: 180px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: rgba(194, 206, 214, 0.7);
+    }
+
+    .log-entry {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .log-time {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .log-text-msg {
+      word-break: break-all;
+    }
+
+    .log-success {
+      color: var(--primary);
+    }
+
+    .log-warning {
+      color: var(--warning);
+    }
+
+    .log-error {
+      color: var(--danger);
+    }
+
+    /* Styling Scrollbar */
+    .log-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    .log-container::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .log-container::-webkit-scrollbar-thumb {
+      background: rgba(194, 206, 214, 0.08);
+      border-radius: 10px;
+    }
+    .log-container::-webkit-scrollbar-thumb:hover {
+      background: rgba(194, 206, 214, 0.16);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg-glow-1"></div>
+  <div class="bg-glow-2"></div>
+
+  <div class="container">
+    <div class="card">
+      
+      <div class="logo-container">
+        <div class="logo-glow-wrapper">
+          <div id="logoShadow" class="logo-shadow"></div>
+          <svg class="logo-icon" id="logoIcon" viewBox="0 0 234 200" xmlns="http://www.w3.org/2000/svg">
+            <path d="M123.742 77.8538L108.597 72.8497C96.2304 68.2664 84.4943 58.4595 86.0207 45.6663C81.8744 44.4399 77.6979 43.1109 73.8396 43.419C64.9369 44.1318 57.1095 50.5476 56.1993 59.0798C55.4301 66.293 58.0358 72.4167 63.9602 75.9468L63.9401 75.9508C63.9401 75.9508 68.3341 78.6231 71.8601 79.6863C74.4578 80.4697 77.2892 81.4886 79.1821 82.2397L80.6763 82.868C80.7145 82.8861 80.7588 82.9043 80.7951 82.9224C80.8011 82.9224 80.8092 82.9224 80.8152 82.9264L108.138 94.4047C108.931 94.739 109.771 96.6963 109.634 97.5179C109.493 98.3597 107.838 98.992 106.573 99.0081L64.3509 99.5558C58.0358 99.6384 55.4724 106.934 56.0886 111.94C56.6806 116.749 61.0021 121.338 66.7855 121.353L120.353 121.489C126.63 121.506 132.894 120.178 137.701 115.523C145.627 107.848 146.296 95.325 139.816 86.7787C135.834 81.5289 129.707 79.8253 123.744 77.8558L123.742 77.8538Z"/>
+            <path d="M177.588 58.963C176.939 50.024 168.969 44.3735 160.719 43.429C156.522 42.9498 152.354 44.5003 148.048 45.6864C147.233 51.0329 150.519 54.7482 146.931 61.8164C146.202 63.2542 141.3 62.6803 140.908 61.0834L140.183 48.6245C139.689 40.1567 131.509 30.5995 123.6 29.9048C121.92 29.7578 119.479 29.6329 118.021 29.6873L111.163 29.943C102.792 30.2552 95.2059 38.6847 94.0842 46.6067C93.1297 53.3507 95.8946 59.7785 101.877 62.044C108.098 64.398 114.115 66.3816 120.44 68.3852C131.183 71.7864 141.423 73.8022 148.044 83.2003C152.893 90.0832 153.268 97.8885 152.66 106.592C159.466 103.936 165.397 101.211 171.549 98.1462C175.848 96.0056 177.833 91.1545 177.854 86.1947C177.89 77.1671 178.27 68.3913 177.586 58.963H177.588Z"/>
+            <path d="M120.679 27.7058C128.412 26.2479 132.325 18.344 130.825 11.0522C129.383 4.04644 122.578 -0.985888 115.009 0.163954C106.65 1.43261 101.432 9.12105 103.142 16.8941C104.874 24.7617 111.916 29.3611 120.679 27.7058V27.7058Z"/>
+            <path d="M158.004 41.5179C164.023 42.0778 169.327 37.9416 171.075 32.6011C173.02 26.6606 170.699 20.5248 164.861 17.5525C161.19 15.6837 157.974 15.6777 154.289 16.9927C148.531 19.0467 145.334 25.0597 146.419 30.9056C147.482 36.6367 152.263 40.9843 158.004 41.5179Z"/>
+            <path d="M74.5063 41.7114C82.2632 41.9973 88.0567 35.5916 87.6137 27.8528C87.211 20.8249 80.4952 15.4523 73.0564 16.4752C67.569 17.2304 63.4932 20.8672 62.5186 26.7533C61.2197 34.5968 67.1824 41.4415 74.5043 41.7114H74.5063Z"/>
+          </svg>
+        </div>
+      </div>
+
+      <h1 class="title">Squad Server Hub</h1>
+      <p class="subtitle">Proactively wake up, ping, and check the status of your Render-hosted production API server.</p>
+
+      <div class="status-panel">
+        <div class="status-row">
+          <span class="status-label">Server State</span>
+          <span id="statusBadge" class="status-badge">UNKNOWN</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Last Latency</span>
+          <span id="latencyValue" class="latency-val">-- ms</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="wakeBtn" class="btn-wake" onclick="triggerWake()">
+          <span class="spinner"></span>
+          <span class="btn-text" id="btnText">Wake Up Server & Ping</span>
+        </button>
+
+        <div class="keep-alive-wrapper">
+          <div>
+            <div class="keep-alive-label">Keep Server Awake</div>
+            <div class="keep-alive-desc">Pings every 10 minutes to bypass Render's sleep rules.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="keepAliveCheck" onchange="toggleKeepAlive(this)">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="log-section">
+        <div class="log-header">
+          <span class="log-title">Live Execution Logs</span>
+          <button class="clear-btn" onclick="clearLogs()">Clear</button>
+        </div>
+        <div id="logContainer" class="log-container">
+          <div class="log-entry">
+            <span class="log-time">[System]</span>
+            <span class="log-text-msg">Hub loaded. Click "Wake Up Server" to ping the Render backend.</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'https://squad-j5q6.onrender.com/api';
+    let isPending = false;
+    let keepAliveInterval = null;
+
+    // Dom elements
+    const statusBadge = document.getElementById('statusBadge');
+    const latencyValue = document.getElementById('latencyValue');
+    const wakeBtn = document.getElementById('wakeBtn');
+    const btnText = document.getElementById('btnText');
+    const logContainer = document.getElementById('logContainer');
+    const logoIcon = document.getElementById('logoIcon');
+    const logoShadow = document.getElementById('logoShadow');
+
+    function log(message, type = 'info') {
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0];
+      
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'log-time';
+      timeSpan.textContent = `[${timeStr}]`;
+      
+      const msgSpan = document.createElement('span');
+      msgSpan.className = `log-text-msg log-${type}`;
+      msgSpan.textContent = message;
+      
+      entry.appendChild(timeSpan);
+      entry.appendChild(msgSpan);
+      
+      logContainer.appendChild(entry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function clearLogs() {
+      logContainer.innerHTML = '';
+      log('Logs cleared.', 'info');
+    }
+
+    function setVisualState(state) {
+      // Clear current classes
+      statusBadge.className = 'status-badge';
+      logoShadow.style.opacity = '0.15';
+      
+      if (state === 'sleeping') {
+        statusBadge.textContent = 'SLEEPING 💤';
+        statusBadge.classList.add('state-sleeping');
+        logoIcon.style.fill = '#f23f43';
+        logoShadow.style.background = '#f23f43';
+        document.documentElement.style.setProperty('--primary', '#f23f43');
+        document.documentElement.style.setProperty('--primary-glow', 'rgba(242, 63, 67, 0.25)');
+      } else if (state === 'waking') {
+        statusBadge.textContent = 'WAKING UP ⚡';
+        statusBadge.classList.add('state-waking');
+        logoIcon.style.fill = '#f0b232';
+        logoShadow.style.background = '#f0b232';
+        logoShadow.style.opacity = '0.35';
+        document.documentElement.style.setProperty('--primary', '#f0b232');
+        document.documentElement.style.setProperty('--primary-glow', 'rgba(240, 178, 50, 0.25)');
+      } else if (state === 'awake') {
+        statusBadge.textContent = 'AWAKE & READY 🟢';
+        statusBadge.classList.add('state-awake');
+        logoIcon.style.fill = '#14AC7B';
+        logoShadow.style.background = '#14AC7B';
+        logoShadow.style.opacity = '0.25';
+        document.documentElement.style.setProperty('--primary', '#14AC7B');
+        document.documentElement.style.setProperty('--primary-glow', 'rgba(20, 172, 123, 0.25)');
+      }
+    }
+
+    async function triggerWake() {
+      if (isPending) return;
+      isPending = true;
+      wakeBtn.disabled = true;
+      wakeBtn.classList.add('loading');
+      
+      log('Initiating server ping...', 'info');
+      setVisualState('waking');
+      
+      const startTime = performance.now();
+      
+      // We will perform a fetch with a controller to handle potential long waits
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        log('Still waiting... Server is likely performing a cold start. Waking it up...', 'warning');
+      }, 5000);
+
+      try {
+        const response = await fetch(API_URL, { 
+          method: 'GET',
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        
+        clearTimeout(timeoutId);
+        const endTime = performance.now();
+        const latency = Math.round(endTime - startTime);
+        latencyValue.textContent = `${latency.toLocaleString()} ms`;
+
+        if (response.ok) {
+          log(`Ping success! Status: ${response.status}. Response time: ${latency}ms`, 'success');
+          // If response took more than 4.5 seconds, it was sleeping
+          if (latency > 4500) {
+            log('Server state verified: Was SLEEPING, now successfully AWAKE!', 'success');
+          } else {
+            log('Server state verified: Already ACTIVE and responsive!', 'success');
+          }
+          setVisualState('awake');
+        } else {
+          log(`Server responded with error status: ${response.status}`, 'error');
+          setVisualState('sleeping');
+        }
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const endTime = performance.now();
+        const latency = Math.round(endTime - startTime);
+        latencyValue.textContent = `${latency.toLocaleString()} ms`;
+        
+        log(`Ping failed after ${latency}ms: ${err.message}`, 'error');
+        setVisualState('sleeping');
+      } finally {
+        isPending = false;
+        wakeBtn.disabled = false;
+        wakeBtn.classList.remove('loading');
+      }
+    }
+
+    function toggleKeepAlive(checkbox) {
+      if (checkbox.checked) {
+        log('Keep-Alive mode enabled. Pinging server every 10 minutes in the background.', 'success');
+        // Ping immediately once
+        triggerWake();
+        // Setup 10-minute interval (600000 ms)
+        keepAliveInterval = setInterval(() => {
+          log('[Keep Alive] Running automated background wake ping...', 'info');
+          fetch(API_URL).then(res => {
+            log(`[Keep Alive] Automated background ping success (${res.status})`, 'success');
+          }).catch(err => {
+            log(`[Keep Alive] Background ping missed: ${err.message}`, 'error');
+          });
+        }, 600000); 
+      } else {
+        log('Keep-Alive mode disabled.', 'warning');
+        if (keepAliveInterval) {
+          clearInterval(keepAliveInterval);
+          keepAliveInterval = null;
+        }
+      }
+    }
+
+    // Auto run ping once on load
+    window.addEventListener('load', () => {
+      triggerWake();
+    });
+  </script>
+
+</body>
+</html>

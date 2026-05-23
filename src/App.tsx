@@ -60,6 +60,9 @@ export default function App() {
       setRoute(nextPath);
     }
 
+    // Proactively wake up the Render backend in the background immediately on mount!
+    api.get('/').catch(() => {});
+
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, [route]);
 

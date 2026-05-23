@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [wakingUp, setWakingUp] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -37,6 +38,13 @@ export default function LoginPage() {
     }
     setLoading(true);
     setError('');
+    setWakingUp(false);
+
+    // Setup timer to detect slow response (server wake-up)
+    const timer = setTimeout(() => {
+      setWakingUp(true);
+    }, 2500);
+
     try {
       const response = await api.post('/auth/login', { email, password });
       const data = response.data;
@@ -56,7 +64,9 @@ export default function LoginPage() {
       const errMsg = err.response?.data?.error || err.response?.data?.message || 'Connection failed. Is the server running?';
       setError(errMsg);
     } finally {
+      clearTimeout(timer);
       setLoading(false);
+      setWakingUp(false);
     }
   };
 
@@ -111,7 +121,7 @@ export default function LoginPage() {
             <a href="#" onClick={(e) => e.preventDefault()} className="forgot-link">Forgot your password?</a>
 
             <button type="submit" className="login-btn" disabled={loading}>
-              {loading ? 'Logging in...' : 'Log in'}
+              {loading ? (wakingUp ? 'Waking up server (takes up to 1 min)...' : 'Logging in...') : 'Log in'}
             </button>
 
             <p className="register-text">
