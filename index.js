@@ -215,6 +215,7 @@ app.use(errorHandler);
 
 // --- Socket.io Logic ---
 const activeConnections = new Map(); // userId string -> Set of socket.id strings
+const disconnectTimers = new Map(); // userId string -> NodeJS.Timeout
 
 // In-memory voice room state: channelId -> Map<userId, { peerId, username, displayName, avatar }>
 const voiceRooms = new Map();
@@ -291,6 +292,13 @@ io.use(async (socket, next) => {
 io.on('connection', async (socket) => {
   const userIdStr = socket.user._id.toString();
   console.log(`User connected to Socket.io: ${socket.user.username} (${socket.id})`);
+
+  // Clear any pending disconnect debounce timers
+  if (disconnectTimers.has(userIdStr)) {
+    clearTimeout(disconnectTimers.get(userIdStr));
+    disconnectTimers.delete(userIdStr);
+    console.log(`[Presence Debounce] Canceled scheduled offline transition for ${socket.user.username}`);
+  }
 
   // Track connection
   if (!activeConnections.has(userIdStr)) {
@@ -714,11 +722,24 @@ io.on('connection', async (socket) => {
       userSockets.delete(socket.id);
       if (userSockets.size === 0) {
         activeConnections.delete(userIdStr);
-        await User.findByIdAndUpdate(socket.user._id, { systemStatus: 'offline' });
 
-        // Broadcast presence update
-        const resolvedStatus = socket.user.userStatusPreference === 'auto' ? 'offline' : socket.user.userStatusPreference;
-        await broadcastPresence(userIdStr, resolvedStatus);
+        // Schedule offline presence transition to avoid connection-flap write amplification
+        const timer = setTimeout(async () => {
+          disconnectTimers.delete(userIdStr);
+          try {
+            await User.findByIdAndUpdate(socket.user._id, { systemStatus: 'offline' });
+            
+            // Broadcast presence update
+            const resolvedStatus = socket.user.userStatusPreference === 'auto' ? 'offline' : socket.user.userStatusPreference;
+            await broadcastPresence(userIdStr, resolvedStatus);
+            console.log(`[Presence Debounce] User ${socket.user.username} is now offline.`);
+          } catch (dbErr) {
+            console.error('Error writing offline status to DB:', dbErr);
+          }
+        }, 10000); // 10-second debounce window
+
+        disconnectTimers.set(userIdStr, timer);
+        console.log(`[Presence Debounce] Scheduled offline transition for ${socket.user.username} in 10s`);
       }
     }
   });
