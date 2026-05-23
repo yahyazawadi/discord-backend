@@ -51,17 +51,19 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
     });
   }, []);
 
-  // Attach a remote stream 1 second after it arrives (let ICE settle)
+  // Attach a remote stream synchronously when it arrives
   const attachStream = useCallback((peerId: string, remote: MediaStream) => {
-    setTimeout(() => {
-      setParticipants(prev => {
-        const idx = prev.findIndex(p => p.peerId === peerId);
-        if (idx !== -1) return prev.map((p, i) => (i === idx ? { ...p, stream: remote } : p));
-        const info = peerIdToInfoRef.current.get(peerId);
-        if (info) return [...prev, { ...info, stream: remote }];
-        return [...prev, { userId: peerId, peerId, username: "Unknown", displayName: "Unknown", avatar: null, stream: remote }];
-      });
-    }, 1000);
+    console.log("[Voice] Attaching stream synchronously for peerId:", peerId);
+    setParticipants(prev => {
+      const idx = prev.findIndex(p => p.peerId === peerId);
+      if (idx !== -1) {
+        if (prev[idx].stream === remote) return prev;
+        return prev.map((p, i) => (i === idx ? { ...p, stream: remote } : p));
+      }
+      const info = peerIdToInfoRef.current.get(peerId);
+      if (info) return [...prev, { ...info, stream: remote }];
+      return [...prev, { userId: peerId, peerId, username: "Unknown", displayName: "Unknown", avatar: null, stream: remote }];
+    });
   }, []);
 
   /**
@@ -124,18 +126,32 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
   }, []);
 
   const initiateConnectionFlow = useCallback((p: VoiceParticipant) => {
-    // If we have video, we call immediately.
-    // If we don't, we wait 1.5 seconds to let them call us first (if they have video).
+    const myPeerId = peerRef.current?.id;
+    if (!myPeerId) {
+      // Buffer if our peer ID is not yet ready/open
+      if (!pendingRef.current.some(x => x.userId === p.userId)) {
+        pendingRef.current.push(p);
+      }
+      return;
+    }
+
     const hasLocalVideo = outgoingRef.current && outgoingRef.current.getVideoTracks().length > 0;
-    if (hasLocalVideo) {
+    // Tie-breaker rule: Lexicographically smaller peer ID initiates the call to avoid collisions.
+    // If we have local video active, we also initiate immediately to negotiate transceivers.
+    const isPolite = myPeerId < p.peerId;
+
+    if (isPolite || hasLocalVideo) {
+      console.log(`[Voice] Initiating polite/video call to ${p.displayName} (us: ${myPeerId}, remote: ${p.peerId})`);
       connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
     } else {
-      console.log("[Voice] Delaying outgoing call to allow video exchange:", p.displayName);
+      console.log(`[Voice] Waiting for ${p.displayName} to call us (us: ${myPeerId}, remote: ${p.peerId})`);
+      // Fallback: if no call is established after 4 seconds, call proactively to guarantee connection
       setTimeout(() => {
         if (peerRef.current && !callsRef.current.has(p.peerId)) {
+          console.log(`[Voice] Fallback calling ${p.displayName} proactively after timeout`);
           connectToUser(p.peerId, outgoingRef.current || localRef.current!, p);
         }
-      }, 1500);
+      }, 4000);
     }
   }, [connectToUser]);
 
@@ -264,17 +280,11 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
         peerInfoRef.current.set(p.userId, p);
         peerIdToInfoRef.current.set(p.peerId, p);
         upsertParticipant(p);
-        const peerOpen = peerRef.current && (peerRef.current as any).open;
-        if (!peerOpen) {
-          if (!pendingRef.current.some(x => x.userId === p.userId)) pendingRef.current.push(p);
-        } else {
-          initiateConnectionFlow(p);
-        }
+        initiateConnectionFlow(p);
       });
     };
 
-    // New participant joined after us — they will call us, but also call them just in case.
-    // connectToUser is idempotent: if a connection already exists it does nothing.
+    // New participant joined after us
     const onUserJoinedVoice = (info: VoiceParticipant & { channelId: string }) => {
       if (info.channelId !== channelId) return;
       console.log("[Voice] user_joined_voice:", info.displayName);
@@ -284,27 +294,7 @@ const useVoiceChannel = ({ channelId, socket, enabled = true, callType = "audio"
       peerInfoRef.current.set(info.userId, info);
       peerIdToInfoRef.current.set(info.peerId, info);
       upsertParticipant(info);
-      
-      // PROACTIVE CALL RULE FOR VIDEO/SCREEN SHARE:
-      // If we are sharing video or screen, we MUST initiate the call to the joining peer
-      // because our stream has video tracks, which forces WebRTC to negotiate video in the SDP.
-      // If they call us (audio-only), WebRTC won't negotiate video transceivers and they won't see our stream.
-      const hasLocalVideo = outgoingRef.current && outgoingRef.current.getVideoTracks().length > 0;
-      if (hasLocalVideo) {
-        console.log("[Voice] Proactively calling new joiner because we are sharing video/screen");
-        const stream = outgoingRef.current;
-        if (stream && peerRef.current && (peerRef.current as any).open) {
-          connectToUser(info.peerId, stream, info);
-        }
-      } else {
-        // Fallback: proactively call the joiner after 3 seconds if connection has not been established from their side
-        setTimeout(() => {
-          if (peerRef.current && (peerRef.current as any).open && !callsRef.current.has(info.peerId)) {
-            console.log("[Voice] Fallback calling new joiner proactively:", info.displayName);
-            connectToUser(info.peerId, outgoingRef.current || localRef.current!, info);
-          }
-        }, 3000);
-      }
+      initiateConnectionFlow(info);
     };
 
     const onUserLeftVoice = ({ channelId: cId, userId }: any) => {

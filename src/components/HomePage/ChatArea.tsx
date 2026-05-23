@@ -123,7 +123,20 @@ const VoiceFeed = ({ participant, isLocal, isDeafened }: { participant: any; isL
   return (
     <div className="participant-card">
       {/* Hidden audio element — plays the remote participant's audio stream */}
-      {!isLocal && <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />}
+      {!isLocal && (
+        <audio
+          ref={audioRef}
+          autoPlay
+          playsInline
+          style={{
+            position: 'absolute',
+            width: '1px',
+            height: '1px',
+            opacity: 0,
+            pointerEvents: 'none'
+          }}
+        />
+      )}
       <div className="participant-fallback-avatar">
         {participant.avatar ? (
           <img
@@ -193,12 +206,14 @@ const compressImageToWebP = (file: File, maxWidth = 1200): Promise<File> => {
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
+        URL.revokeObjectURL(img.src);
         reject(new Error("Failed to get canvas 2D context"));
         return;
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
       canvas.toBlob((blob) => {
+        URL.revokeObjectURL(img.src);
         if (!blob) {
           reject(new Error("Canvas conversion to Blob failed"));
           return;
@@ -210,7 +225,10 @@ const compressImageToWebP = (file: File, maxWidth = 1200): Promise<File> => {
       }, "image/webp", 0.8);
     };
 
-    img.onerror = (err) => reject(err);
+    img.onerror = (err) => {
+      URL.revokeObjectURL(img.src);
+      reject(err);
+    };
   });
 };
 
