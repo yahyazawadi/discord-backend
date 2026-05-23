@@ -106,6 +106,15 @@ if (process.env.NODE_ENV !== 'production') {
 
 // --- Database Connection Middleware ---
 let dbConnectionPromise = null;
+let lastConnectionError = null;
+
+// Track database connection states globally
+mongoose.connection.on('error', (err) => {
+  lastConnectionError = err.message;
+});
+mongoose.connection.on('connected', () => {
+  lastConnectionError = null;
+});
 
 const ensureDbConnected = async (req, res, next) => {
   // Sync Cloudflare environment variables on request in case of lazy initialization
@@ -441,6 +450,8 @@ const htmlContent = `<!DOCTYPE html>
       Active Production Runtime
     </div>
 
+    <!-- DB_STATUS_PLACEHOLDER -->
+
     <div class="info-list">
       <div class="info-item">
         <span class="info-label">Environment</span>
@@ -473,8 +484,74 @@ app.get(/.*/, (req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ success: false, error: 'API route not found' });
   }
+  
+  const readyState = mongoose.connection.readyState;
+  
+  // Proactively trigger background connection if idle and disconnected
+  if (readyState === 0 || readyState === 3) {
+    const rawUri = process.env.MONGODB_URI;
+    if (rawUri && !dbConnectionPromise) {
+      console.log('🔌 [Root Route] Triggering background connection...');
+      dbConnectionPromise = mongoose.connect(rawUri, {
+        serverSelectionTimeoutMS: 8000,
+      }).catch(err => {
+        console.error('💥 [Root Route] Background connection error:', err.message);
+        dbConnectionPromise = null;
+      });
+    }
+  }
+
+  let statusText = 'Disconnected';
+  let statusColor = '#ef4444'; // Red
+  let statusBg = 'rgba(239, 68, 68, 0.1)';
+  let borderColor = 'rgba(239, 68, 68, 0.15)';
+  
+  if (readyState === 1) {
+    statusText = 'Connected';
+    statusColor = '#10b981'; // Green
+    statusBg = 'rgba(16, 185, 129, 0.1)';
+    borderColor = 'rgba(16, 185, 129, 0.2)';
+  } else if (readyState === 2) {
+    statusText = 'Connecting';
+    statusColor = '#f59e0b'; // Amber
+    statusBg = 'rgba(245, 158, 11, 0.1)';
+    borderColor = 'rgba(245, 158, 11, 0.2)';
+  }
+
+  const rawUri = process.env.MONGODB_URI;
+  const uriStatus = rawUri 
+    ? `✅ Active (${rawUri.replace(/:([^@]+)@/, ':***@').substring(0, 45)}...)` 
+    : '❌ Missing / Undefined';
+
+  const activeHost = mongoose.connection.host || 'None';
+  const replicaSet = mongoose.connection.name || 'N/A';
+  
+  const errorLog = lastConnectionError 
+    ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); color: #f87171;"><strong>Error Log:</strong> ${lastConnectionError}</div>`
+    : '';
+
+  const dynamicDbConsole = `
+    <div class="db-status-monitor" style="margin: 20px 0; padding: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid ${borderColor}; border-radius: 12px; width: 100%; text-align: left; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-weight: 600; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary);">Database Node Status</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: ${statusBg}; color: ${statusColor}; transition: all 0.3s ease;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: ${statusColor}; display: inline-block;"></span>
+          ${statusText}
+        </span>
+      </div>
+      <div style="font-family: monospace; font-size: 11px; color: #cbd5e1; line-height: 1.6; word-break: break-all;">
+        <div><strong style="color: #64748b;">URI Binding:</strong> ${uriStatus}</div>
+        <div><strong style="color: #64748b;">Database:</strong> ${replicaSet}</div>
+        <div><strong style="color: #64748b;">Active Host:</strong> ${activeHost}</div>
+        ${errorLog}
+      </div>
+    </div>
+  `;
+
+  let renderedHtml = htmlContent.replace('<!-- DB_STATUS_PLACEHOLDER -->', dynamicDbConsole);
+
   res.setHeader('Content-Type', 'text/html');
-  res.send(htmlContent);
+  res.send(renderedHtml);
 });
 
 // --- Error Handling ---
