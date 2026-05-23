@@ -104,6 +104,23 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
+// Sync Cloudflare environment variables into process.env dynamically
+const syncCfEnv = async () => {
+  try {
+    const cfWorkers = await import('cloudflare:workers');
+    const envSource = cfWorkers.env || cfWorkers.default?.env || cfWorkers;
+    if (envSource) {
+      for (const [key, value] of Object.entries(envSource)) {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          process.env[key] = String(value);
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore on non-Cloudflare environments
+  }
+};
+
 // --- Database Connection Middleware ---
 let dbConnectionPromise = null;
 let lastConnectionError = null;
@@ -118,18 +135,7 @@ mongoose.connection.on('connected', () => {
 
 const ensureDbConnected = async (req, res, next) => {
   // Sync Cloudflare environment variables on request in case of lazy initialization
-  try {
-    const cfWorkers = await import('cloudflare:workers');
-    if (cfWorkers && cfWorkers.env) {
-      for (const [key, value] of Object.entries(cfWorkers.env)) {
-        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-          process.env[key] = String(value);
-        }
-      }
-    }
-  } catch (e) {
-    // Ignore on non-Cloudflare environments
-  }
+  await syncCfEnv();
 
   const readyState = mongoose.connection.readyState;
   console.log(`📡 [DB Middleware] Request: ${req.method} ${req.path} | Connection State: ${readyState}`);
@@ -480,11 +486,12 @@ const htmlContent = `<!DOCTYPE html>
 </html>`;
 
 // Catch-all for non-API routes (Serve the beautiful landing page directly from memory)
-app.get(/.*/, (req, res) => {
+app.get(/.*/, async (req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ success: false, error: 'API route not found' });
   }
   
+  await syncCfEnv();
   const readyState = mongoose.connection.readyState;
   
   // Proactively trigger background connection if idle and disconnected

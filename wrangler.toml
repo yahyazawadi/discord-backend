@@ -2,7 +2,7 @@
 name = "squad-server"
 main = "index.js"
 compatibility_date = "2025-09-01"
-compatibility_flags = [ "nodejs_compat" ]
+compatibility_flags = [ "nodejs_compat", "nodejs_compat_populate_process_env" ]
 
 [vars]
 NODE_ENV = "production"
