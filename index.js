@@ -1,5 +1,6 @@
 import { httpServerHandler } from 'cloudflare:node';
 import express from 'express';
+import http from 'node:http';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -20,6 +21,7 @@ import { join } from 'path';
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
 
 // Initialize Database & Trie Cache
 const initializeDatabase = async () => {
@@ -105,4 +107,4 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Export the HTTP server handler for Cloudflare Workers
-export default httpServerHandler(app);
+export default httpServerHandler(server);
