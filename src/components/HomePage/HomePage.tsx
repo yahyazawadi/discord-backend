@@ -186,7 +186,21 @@ export default function HomePage() {
         setActiveChannelType('text');
       }
       setActiveDmUserId(null); // Hide direct message profile panel
+    } else {
+      setActiveChannelId(null);
+      setActiveChannelName('general');
+      setActiveChannelType('text');
     }
+  };
+
+  const handleServerLeftOrDeleted = (serverId: string) => {
+    localStorage.removeItem('api_cache:/servers');
+    localStorage.removeItem(`api_cache:/servers/${serverId}`);
+    localStorage.removeItem('activeServerId');
+    localStorage.removeItem('activeChannelId');
+    localStorage.removeItem(`lastActiveChannel_${serverId}`);
+    setServersRefreshTrigger(prev => prev + 1);
+    handleSelectSideItem('home');
   };
 
   const handleAcceptCall = () => {
@@ -260,6 +274,7 @@ export default function HomePage() {
               }}
               onOpenSettings={() => setShowSettings(true)}
               open={sidebarOpen}
+              onLeaveOrDelete={handleServerLeftOrDeleted}
             />
           )}
 
@@ -281,7 +296,7 @@ export default function HomePage() {
               ) : activeChannelType === 'voice' && activeChannelId ? (
                 null
               ) : (
-                <ServerProfilePanel serverId={activeId} />
+                <ServerProfilePanel serverId={activeId} onLeaveOrDelete={handleServerLeftOrDeleted} />
               )}
             </>
           )}

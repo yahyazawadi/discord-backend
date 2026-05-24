@@ -33,6 +33,7 @@ interface ServerSidebarProps {
   onSelectChannel: (channelId: string, name: string, type: 'text' | 'voice') => void;
   onOpenSettings: () => void;
   open: boolean;
+  onLeaveOrDelete?: (serverId: string) => void;
 }
 
 // Memory cache to hold server details when out of view
@@ -43,7 +44,8 @@ export default function ServerSidebar({
   activeChannelId,
   onSelectChannel,
   onOpenSettings,
-  open
+  open,
+  onLeaveOrDelete
 }: ServerSidebarProps) {
   const [server, setServer] = useState<ServerDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -228,7 +230,17 @@ export default function ServerSidebar({
         data = res.data;
         if (data.success) {
           alert('Successfully left the server.');
-          window.location.href = '/';
+          if (onLeaveOrDelete) {
+            onLeaveOrDelete(serverId);
+          } else {
+            localStorage.removeItem('api_cache:/servers');
+            localStorage.removeItem(`api_cache:/servers/${serverId}`);
+            localStorage.removeItem('activeServerId');
+            localStorage.removeItem('activeChannelId');
+            localStorage.removeItem(`lastActiveChannel_${serverId}`);
+            localStorage.setItem('activeWorkspaceId', 'home');
+            window.location.reload();
+          }
           return;
         }
       } else if (action === 'delete') {
@@ -237,7 +249,17 @@ export default function ServerSidebar({
         data = res.data;
         if (data.success) {
           alert('Server deleted successfully.');
-          window.location.href = '/';
+          if (onLeaveOrDelete) {
+            onLeaveOrDelete(serverId);
+          } else {
+            localStorage.removeItem('api_cache:/servers');
+            localStorage.removeItem(`api_cache:/servers/${serverId}`);
+            localStorage.removeItem('activeServerId');
+            localStorage.removeItem('activeChannelId');
+            localStorage.removeItem(`lastActiveChannel_${serverId}`);
+            localStorage.setItem('activeWorkspaceId', 'home');
+            window.location.reload();
+          }
           return;
         }
       }
@@ -1015,54 +1037,58 @@ export default function ServerSidebar({
                       >
                         <Gavel size={14} color="#ED4245" /> Ban Member
                       </button>
- 
+
                       {/* Leave Server */}
-                      <button
-                        onClick={() => handleAdminAction('leave')}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          color: '#E67E22',
-                          borderRadius: '8px',
-                          padding: '14px',
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      >
-                        <Door size={14} color="#E67E22" /> Leave Server
-                      </button>
- 
+                      {!isOwner && (
+                        <button
+                          onClick={() => handleAdminAction('leave')}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            color: '#E67E22',
+                            borderRadius: '8px',
+                            padding: '14px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                        >
+                          <Door size={14} color="#E67E22" /> Leave Server
+                        </button>
+                      )}
+
                       {/* Delete Server */}
-                      <button
-                        onClick={() => handleAdminAction('delete')}
-                        style={{
-                          background: '#ED4245',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '8px',
-                          padding: '14px',
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'opacity 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                        onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                      >
-                        <Trash size={14} color="#fff" /> Delete Server
-                      </button>
+                      {isOwner && (
+                        <button
+                          onClick={() => handleAdminAction('delete')}
+                          style={{
+                            background: '#ED4245',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '14px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            transition: 'opacity 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                        >
+                          <Trash size={14} color="#fff" /> Delete Server
+                        </button>
+                      )}
                     </div>
                   </>
                 ) : (

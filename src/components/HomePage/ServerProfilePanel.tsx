@@ -5,6 +5,7 @@ import { Spinner, Warning, Refresh, Door, Crown, Shield, User, UserMinus, Gavel 
 
 interface ServerProfilePanelProps {
   serverId: string;
+  onLeaveOrDelete?: (serverId: string) => void;
 }
 
 interface MemberType {
@@ -56,7 +57,7 @@ const getColorForUser = (name: string) => {
 // Memory cache to hold server profile details when out of view
 const serverProfileCache: Record<string, ServerDetails> = {};
 
-export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps) {
+export default function ServerProfilePanel({ serverId, onLeaveOrDelete }: ServerProfilePanelProps) {
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -167,7 +168,28 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
       const res = await api.post(`/servers/${serverId}/leave`);
       const data = res.data;
       if (data.success) {
-        window.location.reload();
+        // Clear cached profile details
+        delete serverProfileCache[serverId];
+
+        alert('Successfully left the server.');
+
+        if (onLeaveOrDelete) {
+          onLeaveOrDelete(serverId);
+        } else {
+          // Remove navigation history for this server
+          localStorage.removeItem(`lastActiveChannel_${serverId}`);
+          localStorage.removeItem('activeServerId');
+          localStorage.removeItem('activeChannelId');
+
+          // Evict server caches so the client doesn't pull stale cached data
+          localStorage.removeItem('api_cache:/servers');
+          localStorage.removeItem(`api_cache:/servers/${serverId}`);
+
+          // Select the home workspace
+          localStorage.setItem('activeWorkspaceId', 'home');
+
+          window.location.reload();
+        }
       } else {
         alert(data.error || 'Failed to leave server');
       }
@@ -266,8 +288,15 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
   }
 
   // Determine current user authorization levels
-  const isOwner = serverDetails.owner._id === currentUserId;
-  const isAdmin = serverDetails.admins.some((admin) => admin._id === currentUserId);
+  const isOwner = serverDetails.owner?._id
+    ? serverDetails.owner._id.toString() === currentUserId?.toString()
+    : serverDetails.owner?.toString() === currentUserId?.toString();
+
+  const isAdmin = serverDetails.admins.some((admin) => {
+    const adminId = admin._id ? admin._id.toString() : admin.toString();
+    return adminId === currentUserId?.toString();
+  });
+
   const isModerator = isOwner || isAdmin;
 
   // Group members

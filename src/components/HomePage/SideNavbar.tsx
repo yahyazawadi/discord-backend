@@ -127,18 +127,42 @@ export default function SideNavbar({ activeId, setActiveId, refreshTrigger }: Si
       if (data.userId === userId) {
         // Remove the server from local servers list
         setServers(prev => prev.filter(s => s._id !== data.serverId));
+        // Evict relevant caches so that they don't persist on page reload
+        localStorage.removeItem('api_cache:/servers');
+        localStorage.removeItem(`api_cache:/servers/${data.serverId}`);
         // If this server is currently active/selected, clear it
         if (activeId === data.serverId) {
-          setActiveId('');
+          setActiveId('home');
+          localStorage.setItem('activeWorkspaceId', 'home');
           localStorage.removeItem('activeServerId');
           localStorage.removeItem('activeChannelId');
+          localStorage.removeItem(`lastActiveChannel_${data.serverId}`);
         }
       }
     };
 
+    const handleServerDeleted = (data: { serverId: string }) => {
+      console.log('[SideNavbar] server_deleted event received:', data);
+      // Remove the server from local servers list
+      setServers(prev => prev.filter(s => s._id !== data.serverId));
+      // Evict relevant caches so that they don't persist on page reload
+      localStorage.removeItem('api_cache:/servers');
+      localStorage.removeItem(`api_cache:/servers/${data.serverId}`);
+      // If this server is currently active/selected, clear it
+      if (activeId === data.serverId) {
+        setActiveId('home');
+        localStorage.setItem('activeWorkspaceId', 'home');
+        localStorage.removeItem('activeServerId');
+        localStorage.removeItem('activeChannelId');
+        localStorage.removeItem(`lastActiveChannel_${data.serverId}`);
+      }
+    };
+
     socket.on('user_removed_from_server', handleUserRemoved);
+    socket.on('server_deleted', handleServerDeleted);
     return () => {
       socket.off('user_removed_from_server', handleUserRemoved);
+      socket.off('server_deleted', handleServerDeleted);
     };
   }, [activeId, setActiveId]);
 

@@ -65,6 +65,48 @@ api.interceptors.response.use(
       } catch (e) {
         console.warn('⚡ [API Client] Failed to cache response in localStorage:', e);
       }
+    } else if (!isGet && isRelative) {
+      // Invalidate relevant cache keys on mutating requests (POST, PUT, DELETE)
+      try {
+        const url = config.url || '';
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('api_cache:')) {
+            const cachedUrl = key.replace('api_cache:', '');
+            
+            // If we mutate anything under /servers, invalidate the server list and detail cache
+            if (url.includes('servers')) {
+              if (cachedUrl.includes('servers')) {
+                keysToRemove.push(key);
+              }
+            }
+            // If we mutate channels or categories, invalidate the server cache keys
+            else if (url.includes('channels') || url.includes('categories')) {
+              if (cachedUrl.includes('servers')) {
+                keysToRemove.push(key);
+              }
+            }
+            // If we mutate users or auth, invalidate user/auth cache keys
+            else if (url.includes('users') || url.includes('auth')) {
+              if (cachedUrl.includes('users') || cachedUrl.includes('auth')) {
+                keysToRemove.push(key);
+              }
+            }
+            // Logout invalidates everything
+            else if (url.includes('auth/logout')) {
+              keysToRemove.push(key);
+            }
+          }
+        }
+        
+        if (keysToRemove.length > 0) {
+          console.log(`🧹 [API Cache] Invalidating caches due to mutation at ${url}:`, keysToRemove);
+          keysToRemove.forEach(k => localStorage.removeItem(k));
+        }
+      } catch (e) {
+        console.warn('⚡ [API Client] Failed to invalidate cache in localStorage:', e);
+      }
     }
     return response;
   },
