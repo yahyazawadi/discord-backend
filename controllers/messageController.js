@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { broadcastMessageUpdateToRoom } from '../utils/socketHelpers.js';
+import usernameTrie from '../utils/usernameTrie.js';
 
 // Initialize S3 client for R2 lazily
 let r2;
@@ -494,11 +495,11 @@ export const getOrCreateConversation = async (req, res) => {
 
     let targetUserId = recipientId;
     if (!targetUserId && username) {
-      const user = await User.findOne({ username: { $regex: new RegExp(`^${username.trim()}$`, 'i') } });
-      if (!user) {
+      const cachedUser = usernameTrie.search(username);
+      if (!cachedUser) {
         return res.status(404).json({ success: false, error: 'User not found' });
       }
-      targetUserId = user._id.toString();
+      targetUserId = cachedUser.userId;
     }
 
     if (targetUserId.toString() === req.user._id.toString()) {

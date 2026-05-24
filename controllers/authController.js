@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Otp from '../models/Otp.js';
 import sendEmail from '../utils/sendEmail.js';
+import usernameTrie from '../utils/usernameTrie.js';
 
 // Helper to generate JWT
 const generateToken = (id) => {
@@ -40,17 +41,19 @@ export const registerUser = async (req, res, next) => {
         return res.status(400).json({ success: false, error: 'Email already registered', message: 'Email already registered' });
       } else {
         // Delete pending unverified user to avoid duplicate key issues
+        usernameTrie.remove(existingEmail.username);
         await User.deleteOne({ _id: existingEmail._id });
       }
     }
 
-    const existingUsername = await User.findOne({ username });
-    if (existingUsername) {
-      if (existingUsername.isVerified) {
+    const cachedUser = usernameTrie.search(username);
+    if (cachedUser) {
+      if (cachedUser.isVerified) {
         return res.status(400).json({ success: false, error: 'Username already taken', message: 'Username already taken' });
       } else {
         // Delete pending unverified user
-        await User.deleteOne({ _id: existingUsername._id });
+        usernameTrie.remove(username);
+        await User.deleteOne({ _id: cachedUser.userId });
       }
     }
 
@@ -62,6 +65,9 @@ export const registerUser = async (req, res, next) => {
       birthdate,
       isVerified: false,
     });
+
+    // Add to Trie cache
+    usernameTrie.insert(user.username, user._id.toString(), false);
 
     // Generate 6-digit OTP code
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -131,6 +137,9 @@ export const verifyOtp = async (req, res, next) => {
     // Activate the user
     user.isVerified = true;
     await user.save();
+
+    // Update in Trie cache
+    usernameTrie.updateVerification(user.username, true);
 
     // Clean up all OTPs for this email
     await Otp.deleteMany({ email });

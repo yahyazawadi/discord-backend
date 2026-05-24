@@ -19,6 +19,7 @@ import ServerModel from './models/Server.js';
 import Conversation from './models/Conversation.js';
 import Message from './models/Message.js';
 import inviteTrie from './utils/inviteTrie.js';
+import usernameTrie from './utils/usernameTrie.js';
 import jwt from 'jsonwebtoken';
 import { broadcastMessageToRoom, broadcastMessageUpdateToRoom } from './utils/socketHelpers.js';
 import { join } from 'path';
@@ -63,6 +64,17 @@ async function initializeDatabase() {
       }
     });
     console.log(`Loaded ${loadedCount} active invite codes into Trie Cache.`);
+
+    // 3. Load Usernames into in-memory Username Trie Cache
+    const allUsers = await User.find({}).select('username isVerified');
+    let loadedUsersCount = 0;
+    allUsers.forEach((usr) => {
+      if (usr.username) {
+        usernameTrie.insert(usr.username, usr._id.toString(), usr.isVerified);
+        loadedUsersCount++;
+      }
+    });
+    console.log(`Loaded ${loadedUsersCount} usernames into Username Trie Cache.`);
   } catch (error) {
     console.error('Error during database initialization:', error);
   }
