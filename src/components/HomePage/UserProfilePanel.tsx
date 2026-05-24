@@ -48,6 +48,9 @@ const getColorForUser = (name: string) => {
   return GRADIENTS[index];
 };
 
+// Memory cache to hold user profile details when out of view
+const userProfileCache: Record<string, ProfileData> = {};
+
 export default function UserProfilePanel({ userId, onStartCall }: UserProfilePanelProps) {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -60,13 +63,12 @@ export default function UserProfilePanel({ userId, onStartCall }: UserProfilePan
     }
 
     const fetchProfile = async () => {
-      setLoading(true);
-      setError(null);
       try {
         const res = await api.get(`/auth/profile/${userId}`);
         const data = res.data;
         if (data.success) {
           setProfile(data);
+          userProfileCache[userId] = data;
         } else {
           setError(data.error || 'Failed to fetch user profile');
         }
@@ -78,6 +80,16 @@ export default function UserProfilePanel({ userId, onStartCall }: UserProfilePan
         setLoading(false);
       }
     };
+
+    if (userProfileCache[userId]) {
+      setProfile(userProfileCache[userId]);
+      setLoading(false);
+      setError(null);
+    } else {
+      setProfile(null);
+      setLoading(true);
+      setError(null);
+    }
 
     fetchProfile();
   }, [userId]);

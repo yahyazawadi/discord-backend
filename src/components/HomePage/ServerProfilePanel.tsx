@@ -53,6 +53,9 @@ const getColorForUser = (name: string) => {
   return GRADIENTS[index];
 };
 
+// Memory cache to hold server profile details when out of view
+const serverProfileCache: Record<string, ServerDetails> = {};
+
 export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps) {
   const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -69,6 +72,7 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
       const data = res.data;
       if (data.success) {
         setServerDetails(data.server);
+        serverProfileCache[serverId] = data.server;
       } else {
         setError(data.error || 'Failed to fetch server details');
       }
@@ -82,8 +86,15 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
   };
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
+    if (serverProfileCache[serverId]) {
+      setServerDetails(serverProfileCache[serverId]);
+      setLoading(false);
+      setError(null);
+    } else {
+      setServerDetails(null);
+      setLoading(true);
+      setError(null);
+    }
     fetchServerDetails();
   }, [serverId]);
 

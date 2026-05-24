@@ -35,6 +35,9 @@ interface ServerSidebarProps {
   open: boolean;
 }
 
+// Memory cache to hold server details when out of view
+const serverDetailsCache: Record<string, ServerDetails> = {};
+
 export default function ServerSidebar({
   serverId,
   activeChannelId,
@@ -114,6 +117,7 @@ export default function ServerSidebar({
       const data = res.data;
       if (data.success && data.server) {
         setServer(data.server);
+        serverDetailsCache[serverId] = data.server;
         
         // Initialize expanded categories
         const expanded: Record<string, boolean> = {};
@@ -254,7 +258,13 @@ export default function ServerSidebar({
   };
 
   useEffect(() => {
-    setLoading(true);
+    if (serverDetailsCache[serverId]) {
+      setServer(serverDetailsCache[serverId]);
+      setLoading(false);
+    } else {
+      setServer(null);
+      setLoading(true);
+    }
     fetchServerDetails();
   }, [serverId]);
 

@@ -21,25 +21,108 @@ interface IncomingCall {
 
 export default function HomePage() {
   const [activeId, setActiveId] = useState<string>(() => {
-    const saved = localStorage.getItem('selectedServerId');
-    if (saved) {
+    const savedSelected = localStorage.getItem('selectedServerId');
+    if (savedSelected) {
       localStorage.removeItem('selectedServerId');
-      return saved;
+      localStorage.setItem('activeWorkspaceId', savedSelected);
+      return savedSelected;
     }
-    return 'home';
+    const savedActive = localStorage.getItem('activeWorkspaceId');
+    return savedActive || 'home';
   });
-  const [activeDmId, setActiveDmId] = useState<string | null>(null);
-  const [activeDmName, setActiveDmName] = useState<string>('Katara');
-  const [activeDmUserId, setActiveDmUserId] = useState<string | null>(null);
-  const [activeDmAvatar, setActiveDmAvatar] = useState<string | null>(null);
+
+  const [activeDmId, setActiveDmId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('lastActiveDm');
+    if (saved) {
+      try {
+        return JSON.parse(saved).id;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [activeDmName, setActiveDmName] = useState<string>(() => {
+    const saved = localStorage.getItem('lastActiveDm');
+    if (saved) {
+      try {
+        return JSON.parse(saved).name || 'Katara';
+      } catch {
+        return 'Katara';
+      }
+    }
+    return 'Katara';
+  });
+  const [activeDmUserId, setActiveDmUserId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('lastActiveDm');
+    if (saved) {
+      try {
+        return JSON.parse(saved).userId || null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [activeDmAvatar, setActiveDmAvatar] = useState<string | null>(() => {
+    const saved = localStorage.getItem('lastActiveDm');
+    if (saved) {
+      try {
+        return JSON.parse(saved).avatar || null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [serversRefreshTrigger, setServersRefreshTrigger] = useState(0);
 
   // States for active server channels
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
-  const [activeChannelName, setActiveChannelName] = useState<string>('general');
-  const [activeChannelType, setActiveChannelType] = useState<'text' | 'voice'>('text');
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(() => {
+    const savedActive = localStorage.getItem('activeWorkspaceId') || 'home';
+    if (savedActive !== 'home' && savedActive !== 'discover') {
+      const savedChannel = localStorage.getItem(`lastActiveChannel_${savedActive}`);
+      if (savedChannel) {
+        try {
+          return JSON.parse(savedChannel).id;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
+  const [activeChannelName, setActiveChannelName] = useState<string>(() => {
+    const savedActive = localStorage.getItem('activeWorkspaceId') || 'home';
+    if (savedActive !== 'home' && savedActive !== 'discover') {
+      const savedChannel = localStorage.getItem(`lastActiveChannel_${savedActive}`);
+      if (savedChannel) {
+        try {
+          return JSON.parse(savedChannel).name || 'general';
+        } catch {
+          return 'general';
+        }
+      }
+    }
+    return 'general';
+  });
+  const [activeChannelType, setActiveChannelType] = useState<'text' | 'voice'>(() => {
+    const savedActive = localStorage.getItem('activeWorkspaceId') || 'home';
+    if (savedActive !== 'home' && savedActive !== 'discover') {
+      const savedChannel = localStorage.getItem(`lastActiveChannel_${savedActive}`);
+      if (savedChannel) {
+        try {
+          return JSON.parse(savedChannel).type || 'text';
+        } catch {
+          return 'text';
+        }
+      }
+    }
+    return 'text';
+  });
 
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [initialCallType, setInitialCallType] = useState<'audio' | 'video' | null>(null);
@@ -82,9 +165,26 @@ export default function HomePage() {
 
   const handleSelectSideItem = (id: string) => {
     setActiveId(id);
+    localStorage.setItem('activeWorkspaceId', id);
     setShowSettings(false); // Close settings when switching workspace context
     if (id !== 'home' && id !== 'discover') {
-      setActiveChannelId(null);
+      const savedChannel = localStorage.getItem(`lastActiveChannel_${id}`);
+      if (savedChannel) {
+        try {
+          const parsed = JSON.parse(savedChannel);
+          setActiveChannelId(parsed.id);
+          setActiveChannelName(parsed.name);
+          setActiveChannelType(parsed.type);
+        } catch (e) {
+          setActiveChannelId(null);
+          setActiveChannelName('general');
+          setActiveChannelType('text');
+        }
+      } else {
+        setActiveChannelId(null);
+        setActiveChannelName('general');
+        setActiveChannelType('text');
+      }
       setActiveDmUserId(null); // Hide direct message profile panel
     }
   };
@@ -92,6 +192,7 @@ export default function HomePage() {
   const handleAcceptCall = () => {
     if (!incomingCall) return;
     setActiveId('home');
+    localStorage.setItem('activeWorkspaceId', 'home');
     setActiveDmId(incomingCall.conversationId);
     setActiveDmName(incomingCall.callerName);
     setActiveDmUserId(incomingCall.callerId);
@@ -132,6 +233,9 @@ export default function HomePage() {
                   setActiveDmName(name);
                   setActiveDmUserId(userId || null);
                   setActiveDmAvatar(avatar || null);
+                  
+                  // Save last active DM
+                  localStorage.setItem('lastActiveDm', JSON.stringify({ id, name, userId, avatar }));
                 }
                 setSidebarOpen(false);
                 setShowSettings(false); // Close settings when selecting DMs
@@ -147,6 +251,10 @@ export default function HomePage() {
                 setActiveChannelId(channelId);
                 setActiveChannelName(name);
                 setActiveChannelType(type);
+                
+                // Save last active channel
+                localStorage.setItem(`lastActiveChannel_${activeId}`, JSON.stringify({ id: channelId, name, type }));
+                
                 setSidebarOpen(false);
                 setShowSettings(false);
               }}
