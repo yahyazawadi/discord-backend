@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import api from '../../utils/api';
-import { Spinner, Warning, Bolt, Cross, Shield, User, UserMinus, Gavel, Door, Trash, Speaker } from '../Icons';
+import { Spinner, Warning, Speaker } from '../Icons';
 
 interface ChannelType {
   _id: string;
@@ -44,8 +44,7 @@ export default function ServerSidebar({
   activeChannelId,
   onSelectChannel,
   onOpenSettings,
-  open,
-  onLeaveOrDelete
+  open
 }: ServerSidebarProps) {
   const [server, setServer] = useState<ServerDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,10 +94,7 @@ export default function ServerSidebar({
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
 
-  // States for Admin Action Tester
-  const [showAdminMenu, setShowAdminMenu] = useState(false);
-  const [targetUserId, setTargetUserId] = useState('');
-  const [adminStatusText, setAdminStatusText] = useState('');
+
 
   // States for Category and Channel creation
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
@@ -195,89 +191,7 @@ export default function ServerSidebar({
     }
   };
 
-  const handleAdminAction = async (action: string) => {
-    setAdminStatusText('');
-    
-    // Validations for targetUserId actions
-    if (['promote', 'demote', 'kick', 'ban'].includes(action) && !targetUserId.trim()) {
-      setAdminStatusText('❌ Error: Target User ID is required.');
-      return;
-    }
 
-    const trimmedTargetId = targetUserId.trim();
-
-    try {
-      let res;
-      let data;
-
-      if (action === 'promote') {
-        res = await api.post(`/servers/${serverId}/admins`, { userId: trimmedTargetId });
-        data = res.data;
-      } else if (action === 'demote') {
-        res = await api.delete(`/servers/${serverId}/admins/${trimmedTargetId}`);
-        data = res.data;
-      } else if (action === 'kick') {
-        if (!window.confirm('Are you sure you want to kick this member?')) return;
-        res = await api.post(`/servers/${serverId}/kick/${trimmedTargetId}`);
-        data = res.data;
-      } else if (action === 'ban') {
-        if (!window.confirm('Are you sure you want to permanently ban this member?')) return;
-        res = await api.post(`/servers/${serverId}/ban/${trimmedTargetId}`);
-        data = res.data;
-      } else if (action === 'leave') {
-        if (!window.confirm('Are you sure you want to leave this server?')) return;
-        res = await api.post(`/servers/${serverId}/leave`);
-        data = res.data;
-        if (data.success) {
-          alert('Successfully left the server.');
-          if (onLeaveOrDelete) {
-            onLeaveOrDelete(serverId);
-          } else {
-            localStorage.removeItem('api_cache:/servers');
-            localStorage.removeItem(`api_cache:/servers/${serverId}`);
-            localStorage.removeItem('activeServerId');
-            localStorage.removeItem('activeChannelId');
-            localStorage.removeItem(`lastActiveChannel_${serverId}`);
-            localStorage.setItem('activeWorkspaceId', 'home');
-            window.location.reload();
-          }
-          return;
-        }
-      } else if (action === 'delete') {
-        if (!window.confirm('🚨 WARNING: Are you absolutely sure you want to DELETE this server? This action is permanent and cannot be undone.')) return;
-        res = await api.delete(`/servers/${serverId}`);
-        data = res.data;
-        if (data.success) {
-          alert('Server deleted successfully.');
-          if (onLeaveOrDelete) {
-            onLeaveOrDelete(serverId);
-          } else {
-            localStorage.removeItem('api_cache:/servers');
-            localStorage.removeItem(`api_cache:/servers/${serverId}`);
-            localStorage.removeItem('activeServerId');
-            localStorage.removeItem('activeChannelId');
-            localStorage.removeItem(`lastActiveChannel_${serverId}`);
-            localStorage.setItem('activeWorkspaceId', 'home');
-            window.location.reload();
-          }
-          return;
-        }
-      }
-
-      if (data && data.success) {
-        setAdminStatusText(`✅ Success: ${data.message || 'Action executed successfully!'}`);
-        setTargetUserId('');
-        // Reload details
-        fetchServerDetails();
-      } else {
-        setAdminStatusText(`❌ Error: ${data?.error || 'Action failed.'}`);
-      }
-    } catch (err: any) {
-      console.error(err);
-      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Network error occurred.';
-      setAdminStatusText(`❌ Error: ${errMsg}`);
-    }
-  };
 
   useEffect(() => {
     if (serverDetailsCache[serverId]) {
@@ -347,12 +261,7 @@ export default function ServerSidebar({
           justifyContent: 'space-between',
           padding: '16px 20px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-          cursor: 'pointer',
-          transition: 'background 0.2s',
         }}
-        onClick={() => setShowAdminMenu(true)}
-        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)'}
-        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
         >
           <span style={{
             fontSize: '16px',
@@ -361,13 +270,10 @@ export default function ServerSidebar({
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            maxWidth: '160px'
+            maxWidth: '180px'
           }}>
             {server.name}
           </span>
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ color: '#C7C9CB' }}>
-            <path d="M4.5 6.75L9 11.25L13.5 6.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
         </div>
 
         {/* Channels scroll area */}
@@ -840,307 +746,6 @@ export default function ServerSidebar({
           </div>
         </div>
       </aside>
-
-      {/* Admin Action Tester Modal */}
-      {showAdminMenu && (() => {
-        const isOwner = server?.owner?._id 
-          ? server.owner._id.toString() === currentUser._id?.toString()
-          : server?.owner?.toString() === currentUser._id?.toString();
-
-        const isAdmin = server?.admins?.some((admin: any) => {
-          const adminId = admin._id ? admin._id.toString() : admin.toString();
-          return adminId === currentUser._id?.toString();
-        });
-
-        const isServerAdminOrOwner = isOwner || isAdmin;
-
-        return (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 9999,
-            fontFamily: 'Inter, sans-serif'
-          }}>
-            <div style={{
-              width: '580px',
-              background: '#171E24',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '16px',
-              boxShadow: '0 16px 48px rgba(0, 0, 0, 0.8)',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column'
-            }}>
-              {/* Header */}
-              <div style={{
-                padding: '20px 24px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: '#1E262F'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bolt size={20} color="#FAA61A" />
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>Server Settings & Actions</h3>
-                </div>
-                <button 
-                  onClick={() => { setShowAdminMenu(false); setTargetUserId(''); setAdminStatusText(''); }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#8E9297',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <Cross size={18} color="#8E9297" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {isServerAdminOrOwner ? (
-                  <>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <label style={{ fontSize: '11px', color: '#8E9297', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '0.5px' }}>
-                        Target User ID
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="Paste member _id here"
-                        value={targetUserId}
-                        onChange={(e) => setTargetUserId(e.target.value)}
-                        style={{
-                          background: '#0D1114',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
-                          padding: '12px',
-                          color: '#fff',
-                          fontSize: '13px',
-                          outline: 'none',
-                          width: '100%',
-                          boxSizing: 'border-box'
-                        }}
-                      />
-                    </div>
-
-                    {/* 6 Actions Grid (exactly like user screenshot) */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '12px',
-                      marginTop: '8px'
-                    }}>
-                      {/* Promote to Admin */}
-                      <button
-                        onClick={() => handleAdminAction('promote')}
-                        style={{
-                          background: '#5865F2',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '8px',
-                          padding: '14px',
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'opacity 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                        onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                      >
-                        <Shield size={14} color="#fff" /> Promote to Admin
-                      </button>
- 
-                      {/* Demote Admin */}
-                      <button
-                        onClick={() => handleAdminAction('demote')}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          color: '#fff',
-                          borderRadius: '8px',
-                          padding: '14px',
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      >
-                        <User size={14} color="#fff" /> Demote Admin
-                      </button>
- 
-                      {/* Kick Member */}
-                      <button
-                        onClick={() => handleAdminAction('kick')}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          color: '#fff',
-                          borderRadius: '8px',
-                          padding: '14px',
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      >
-                        <UserMinus size={14} color="#fff" /> Kick Member
-                      </button>
- 
-                      {/* Ban Member */}
-                      <button
-                        onClick={() => handleAdminAction('ban')}
-                        style={{
-                          background: 'rgba(237, 66, 69, 0.1)',
-                          border: '1px solid #ED4245',
-                          color: '#ED4245',
-                          borderRadius: '8px',
-                          padding: '14px',
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.15)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(237, 66, 69, 0.1)'}
-                      >
-                        <Gavel size={14} color="#ED4245" /> Ban Member
-                      </button>
-
-                      {/* Leave Server */}
-                      {!isOwner && (
-                        <button
-                          onClick={() => handleAdminAction('leave')}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            color: '#E67E22',
-                            borderRadius: '8px',
-                            padding: '14px',
-                            fontSize: '13px',
-                            fontWeight: 'bold',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            transition: 'background 0.2s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                        >
-                          <Door size={14} color="#E67E22" /> Leave Server
-                        </button>
-                      )}
-
-                      {/* Delete Server */}
-                      {isOwner && (
-                        <button
-                          onClick={() => handleAdminAction('delete')}
-                          style={{
-                            background: '#ED4245',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '8px',
-                            padding: '14px',
-                            fontSize: '13px',
-                            fontWeight: 'bold',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            transition: 'opacity 0.2s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                        >
-                          <Trash size={14} color="#fff" /> Delete Server
-                        </button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <p style={{ color: '#8E9297', fontSize: '14px', margin: 0 }}>
-                      You are currently a member of this server. You can choose to leave this server.
-                    </p>
-                    <button
-                      onClick={() => handleAdminAction('leave')}
-                      style={{
-                        background: '#ED4245',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '14px',
-                        fontSize: '13px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        transition: 'opacity 0.2s'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                    >
-                      🚪 Leave Server
-                    </button>
-                  </div>
-                )}
-
-                {/* Status Output */}
-                {adminStatusText && (
-                  <div style={{
-                    padding: '12px',
-                    borderRadius: '8px',
-                    background: '#0D1114',
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                    color: adminStatusText.includes('Success') ? '#14AC7B' : '#ED4245',
-                    fontSize: '12px',
-                    textAlign: 'center',
-                    fontWeight: 'bold'
-                  }}>
-                    {adminStatusText}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Create Category Modal */}
       {showCreateCategoryModal && (
