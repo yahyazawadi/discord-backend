@@ -262,9 +262,11 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
 
   const chatPaneRef = useRef<HTMLDivElement>(null);
   const [isChatFullscreen, setIsChatFullscreen] = useState(false);
+  const callPaneRef = useRef<HTMLDivElement>(null);
+  const [isCallPaneFullscreen, setIsCallPaneFullscreen] = useState(false);
 
   // Resizable voice/chat split (percentage height for call pane, out of 100)
-  const [callPaneHeightPct, setCallPaneHeightPct] = useState(55);
+  const [callPaneHeightPct, setCallPaneHeightPct] = useState(30);
   const isDraggingRef = useRef(false);
   const voiceLayoutRef = useRef<HTMLElement>(null);
 
@@ -311,6 +313,25 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     if (!document.fullscreenElement) {
       chatPaneRef.current.requestFullscreen().catch((err) => {
         console.error('Error enabling chat fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    const handleCallFullscreenChange = () => {
+      setIsCallPaneFullscreen(document.fullscreenElement === callPaneRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleCallFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleCallFullscreenChange);
+  }, []);
+
+  const toggleCallPaneFullscreen = () => {
+    if (!callPaneRef.current) return;
+    if (!document.fullscreenElement) {
+      callPaneRef.current.requestFullscreen().catch((err) => {
+        console.error('Error enabling call pane fullscreen:', err);
       });
     } else {
       document.exitFullscreen();
@@ -1787,7 +1808,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
     return (
       <section ref={voiceLayoutRef} className="chat-area voice-layout-container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', background: '#0b0e11' }}>
         {/* Top Call/Join Pane */}
-        <div className="voice-call-pane" style={{ height: `${callPaneHeightPct}%`, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#0b0e11', position: 'relative', flexShrink: 0 }}>
+        <div ref={callPaneRef} className="voice-call-pane" style={{ height: `${callPaneHeightPct}%`, display: 'flex', flexDirection: 'column', minHeight: 0, background: '#0b0e11', position: 'relative', flexShrink: 0 }}>
           {callActive ? (
             <div className="voice-call-active-container" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
               <div className="calling-header" style={{ flexShrink: 0 }}>
@@ -1800,6 +1821,35 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   {isConnecting && <span style={{ fontSize: '12px', color: '#FAA61A' }}>Connecting...</span>}
                   {callError && <span style={{ fontSize: '12px', color: '#F85149' }}>{callError}</span>}
+                  <button
+                    onClick={toggleCallPaneFullscreen}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#8E9297',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '6px',
+                      borderRadius: '4px',
+                      transition: 'all 0.2s',
+                      flexShrink: 0
+                    }}
+                    title={isCallPaneFullscreen ? 'Exit Fullscreen' : 'Fullscreen Call'}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#8E9297'; e.currentTarget.style.background = 'none'; }}
+                  >
+                    {isCallPaneFullscreen ? (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                      </svg>
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3M10 21v-6H4M4 20l6-6M20 4l-6 6M14 10V4"/>
+                      </svg>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -2069,7 +2119,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       {callActive ? (
         <>
           {/* Call pane — resizable height */}
-          <div style={{ height: `${callPaneHeightPct}%`, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div ref={callPaneRef} className="voice-call-pane" style={{ height: `${callPaneHeightPct}%`, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div className="calling-container" style={{ margin: 0, borderRadius: 0, border: 'none', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div className="calling-header">
                 <div className="calling-title">
@@ -2078,8 +2128,39 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
                     {callType === 'video' ? 'Video Call' : 'Voice Call'} — {recipientName}
                   </span>
                 </div>
-                {isConnecting && <span style={{ fontSize: '12px', color: '#FAA61A' }}>Connecting...</span>}
-                {callError && <span style={{ fontSize: '12px', color: '#F85149' }}>{callError}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {isConnecting && <span style={{ fontSize: '12px', color: '#FAA61A' }}>Connecting...</span>}
+                  {callError && <span style={{ fontSize: '12px', color: '#F85149' }}>{callError}</span>}
+                  <button
+                    onClick={toggleCallPaneFullscreen}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#8E9297',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '6px',
+                      borderRadius: '4px',
+                      transition: 'all 0.2s',
+                      flexShrink: 0
+                    }}
+                    title={isCallPaneFullscreen ? 'Exit Fullscreen' : 'Fullscreen Call'}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#8E9297'; e.currentTarget.style.background = 'none'; }}
+                  >
+                    {isCallPaneFullscreen ? (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>
+                      </svg>
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3M10 21v-6H4M4 20l6-6M20 4l-6 6M14 10V4"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="calling-participants-grid" style={{ flex: 1, maxHeight: 'none', overflowY: 'auto' }}>

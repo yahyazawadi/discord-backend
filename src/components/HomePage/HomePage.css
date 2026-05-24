@@ -1279,3 +1279,41 @@
 .voice-resize-handle:active .voice-resize-grip-bar {
   background: #14AC7B !important;
 }
+
+/* Fullscreen voice call pane */
+.voice-call-pane:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #0b0e11 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+.voice-call-pane:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #0b0e11 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+.voice-call-pane:fullscreen .calling-participants-grid {
+  max-height: none !important;
+  flex: 1 !important;
+}
+
+.voice-call-pane:-webkit-full-screen .calling-participants-grid {
+  max-height: none !important;
+  flex: 1 !important;
+}
+
