@@ -58,11 +58,6 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
-  
-  // Nickname states
-  const [editingNickname, setEditingNickname] = useState<boolean>(false);
-  const [nicknameInput, setNicknameInput] = useState<string>('');
-
   const token = localStorage.getItem('token');
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const currentUserId = currentUser._id;
@@ -74,8 +69,6 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
       const data = res.data;
       if (data.success) {
         setServerDetails(data.server);
-        const myMember = data.server.members.find((m: MemberType) => m.user && m.user._id === currentUserId);
-        setNicknameInput(myMember?.nickname || '');
       } else {
         setError(data.error || 'Failed to fetch server details');
       }
@@ -156,22 +149,6 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
     }
   };
 
-  const handleUpdateNickname = async () => {
-    try {
-      const res = await api.put(`/servers/${serverId}/nickname`, { nickname: nicknameInput });
-      const data = res.data;
-      if (data.success) {
-        fetchServerDetails();
-        setEditingNickname(false);
-      } else {
-        alert(data.error || 'Failed to update nickname');
-      }
-    } catch (err: any) {
-      console.error(err);
-      const errMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to update nickname';
-      alert(errMsg);
-    }
-  };
 
   const handleLeaveServer = async () => {
     if (!window.confirm('Are you sure you want to leave this server?')) return;
@@ -362,7 +339,7 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
       {/* Cards container */}
       <div className="profile-panel-cards" style={{ gap: '14px' }}>
         {/* Invite link Card */}
-        {serverDetails.inviteCode && (
+        {isModerator && serverDetails.inviteCode && (
           <div className="info-card">
             <span className="info-card-title" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Invite Link</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '6px 10px', borderRadius: '8px' }}>
@@ -412,48 +389,6 @@ export default function ServerProfilePanel({ serverId }: ServerProfilePanelProps
           </div>
         )}
 
-        {/* My Nickname Card */}
-        <div className="info-card">
-          <span className="info-card-title" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>My Nickname</span>
-          {editingNickname ? (
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <input
-                type="text"
-                value={nicknameInput}
-                onChange={(e) => setNicknameInput(e.target.value)}
-                placeholder="Set nickname..."
-                style={{
-                  flex: 1,
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '6px',
-                  color: '#fff',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  outline: 'none'
-                }}
-              />
-              <button onClick={handleUpdateNickname} style={{ background: '#14AC7B', border: 'none', borderRadius: '6px', color: '#fff', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>
-                Save
-              </button>
-              <button onClick={() => setEditingNickname(false)} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '6px', color: '#fff', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', color: '#fff', fontStyle: nicknameInput ? 'normal' : 'italic', opacity: nicknameInput ? 1 : 0.4 }}>
-                {nicknameInput || 'No nickname set'}
-              </span>
-              <button
-                onClick={() => setEditingNickname(true)}
-                style={{ background: 'none', border: 'none', color: '#14AC7B', fontSize: '11px', cursor: 'pointer' }}
-              >
-                Edit
-              </button>
-            </div>
-          )}
-        </div>
 
         {/* Leave server option */}
         {!isOwner && (

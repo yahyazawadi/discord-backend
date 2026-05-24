@@ -88,7 +88,7 @@ Handles authentication, password hashing, active presence status, age checks, an
 * `blockedUsers`: Array of ObjectIds referencing other `User` profiles (utilized by the DM block validation engine).
 * `anonymousNames`: Array of sub-documents mapping active context (servers/channels/DMs) to active anonymous display names:
   * `contextId`: ObjectId representing the context (e.g. Server ID, Channel ID, or Conversation ID).
-  * `anonymousName`: The user's registered, non-conflicting anonymous name for this specific room/context (user-editable).
+  * `anonymousName`: The user's registered, non-conflicting anonymous name for this specific room/context (strictly system-generated, NOT user-editable).
 * `isVerified`: Boolean indicating if user's email has been verified via OTP (defaults to false).
 
 ### 🛡️ Server Model (`models/Server.js`)

@@ -70,9 +70,10 @@ interface ServerType {
 interface SideNavbarProps {
   activeId: string;
   setActiveId: (id: string) => void;
+  refreshTrigger?: number;
 }
 
-export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
+export default function SideNavbar({ activeId, setActiveId, refreshTrigger }: SideNavbarProps) {
   const [servers, setServers] = useState<ServerType[]>([]);
   
   // Modal States
@@ -112,7 +113,7 @@ export default function SideNavbar({ activeId, setActiveId }: SideNavbarProps) {
 
   useEffect(() => {
     fetchServers();
-  }, []);
+  }, [refreshTrigger]);
 
   // Listen for real-time kick/ban eviction events
   useEffect(() => {

@@ -34,6 +34,7 @@ export default function HomePage() {
   const [activeDmAvatar, setActiveDmAvatar] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [serversRefreshTrigger, setServersRefreshTrigger] = useState(0);
 
   // States for active server channels
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -108,11 +109,12 @@ export default function HomePage() {
 
   return (
     <div className="home-page">
-      <SideNavbar activeId={activeId} setActiveId={handleSelectSideItem} />
+      <SideNavbar activeId={activeId} setActiveId={handleSelectSideItem} refreshTrigger={serversRefreshTrigger} />
       {activeId === 'discover' ? (
         <DiscoverArea 
-          onJoinServer={() => {
-            handleSelectSideItem('home');
+          onJoinServer={(serverId) => {
+            setServersRefreshTrigger(prev => prev + 1);
+            handleSelectSideItem(serverId);
           }} 
         />
       ) : (
