@@ -449,6 +449,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   // Message Reply & Emoji states
   const [replyingToMessage, setReplyingToMessage] = useState<any | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [isAnonMode, setIsAnonMode] = useState(false);
 
   // File upload states
   const [selectedAttachments, setSelectedAttachments] = useState<any[]>([]);
@@ -478,6 +479,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
 
   // Fetch messages when conversationId or channelId changes
   useEffect(() => {
+    setIsAnonMode(false); // Reset anonymous mode when changing channels or direct conversations
     if (!conversationId && !channelId) {
       setMessages([]);
       return;
@@ -752,7 +754,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       _id: tempId,
       content: contentStr,
       attachments: attachmentsArr,
-      sender: currentUser,
+      sender: isAnonMode ? { _id: 'anonymous', username: 'anonymous', displayName: 'Anonymous', avatar: '' } : currentUser,
       createdAt: new Date().toISOString(),
       isOptimistic: true,
       parentMessage: replyingToMessage ? {
@@ -775,7 +777,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       channelId: channelId || null,
       content: contentStr,
       attachments: attachmentsArr,
-      isAnonymous: false,
+      isAnonymous: isAnonMode,
       parentMessageId: replyingToMessage?._id || null
     });
 
@@ -820,7 +822,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
   // Toggle ❤️ Reaction
   const handleToggleReaction = (messageId: string) => {
     const socket = getSocket();
-    socket.emit('add_reaction', { messageId, emoji: '❤️', isAnonymous: false });
+    socket.emit('add_reaction', { messageId, emoji: '❤️', isAnonymous: isAnonMode });
   };
 
   // Save edited message content
@@ -945,7 +947,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       _id: tempId,
       content: gifUrl,
       attachments: [],
-      sender: currentUser,
+      sender: isAnonMode ? { _id: 'anonymous', username: 'anonymous', displayName: 'Anonymous', avatar: '' } : currentUser,
       createdAt: new Date().toISOString(),
       isOptimistic: true,
       parentMessage: replyingToMessage ? {
@@ -968,7 +970,7 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
       channelId: channelId || null,
       content: gifUrl,
       attachments: [],
-      isAnonymous: false,
+      isAnonymous: isAnonMode,
       parentMessageId: replyingToMessage?._id || null
     });
 
@@ -1035,7 +1037,13 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
                     }}
                   >
                     {/* User Avatar */}
-                    {sender.avatar ? (
+                    {msg.isAnonymous && isMyMessage ? (
+                      <img
+                        src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.anonymousSenderName || 'anonymous')}`}
+                        alt="Anonymous avatar"
+                        className="chat-message-avatar"
+                      />
+                    ) : sender.avatar ? (
                       <img
                         src={sender.avatar}
                         alt={sender.username}
@@ -1050,8 +1058,42 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
                     {/* Message Body */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff' }}>
-                          {sender.displayName || sender.username}
+                        <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          {msg.isAnonymous 
+                            ? (msg.anonymousSenderName || 'Anonymous Member') 
+                            : (sender.displayName || sender.username)
+                          }
+                          {isMyMessage && (
+                            msg.isAnonymous ? (
+                              <span style={{ 
+                                fontSize: '10px', 
+                                fontWeight: '600', 
+                                color: '#EB5757', 
+                                background: 'rgba(235, 87, 87, 0.1)',
+                                border: '1px solid rgba(235, 87, 87, 0.25)',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
+                              }}>
+                                you (anonymous)
+                              </span>
+                            ) : (
+                              <span style={{ 
+                                fontSize: '10px', 
+                                fontWeight: '600', 
+                                color: '#14AC7B', 
+                                background: 'rgba(20, 172, 123, 0.1)',
+                                border: '1px solid rgba(20, 172, 123, 0.25)',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px'
+                              }}>
+                                you
+                              </span>
+                            )
+                          )}
                         </span>
                         <span style={{ fontSize: '10px', color: '#72767D' }}>
                           {formatMessageTime(msg.createdAt)}
@@ -1762,7 +1804,73 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
             )}
           </div>
 
-          <div className="chat-input-divider" />
+          {channelId && (
+            <>
+              <div className="chat-input-divider" />
+
+              {/* Anonymous Toggle */}
+              <button
+                onClick={() => setIsAnonMode(!isAnonMode)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: isAnonMode ? 'rgba(235, 87, 87, 0.1)' : 'rgba(20, 172, 123, 0.1)',
+                  border: isAnonMode ? '1px solid rgba(235, 87, 87, 0.3)' : '1px solid rgba(20, 172, 123, 0.3)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease-in-out',
+                  marginRight: '8px',
+                  userSelect: 'none',
+                  height: '32px',
+                }}
+                title={isAnonMode ? "Send as Anonymous" : `Send as @${currentUser?.username}`}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  if (isAnonMode) {
+                    e.currentTarget.style.background = 'rgba(235, 87, 87, 0.18)';
+                  } else {
+                    e.currentTarget.style.background = 'rgba(20, 172, 123, 0.18)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  if (isAnonMode) {
+                    e.currentTarget.style.background = 'rgba(235, 87, 87, 0.1)';
+                  } else {
+                    e.currentTarget.style.background = 'rgba(20, 172, 123, 0.1)';
+                  }
+                }}
+              >
+                {/* Icon */}
+                {isAnonMode ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EB5757" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14AC7B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                )}
+                {/* Text Label */}
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: isAnonMode ? '#EB5757' : '#14AC7B',
+                  maxWidth: '120px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  transition: 'color 0.25s'
+                }}>
+                  {isAnonMode ? 'Anonymous' : `@${currentUser?.username || 'user'}`}
+                </span>
+              </button>
+            </>
+          )}
 
           {/* Send button */}
           <button
@@ -1770,11 +1878,8 @@ export default function ChatArea({ conversationId, channelId, recipientName, rec
             aria-label="Send Message"
             onClick={handleSendMessage}
           >
-            <svg width="18" height="18" viewBox="0 0 22 21" fill="none">
-              <path
-                d="M20.0239 10.9981L13.7051 11.609L12.0423 16.9269C11.9432 17.2413 12.0404 17.585 12.2906 17.8003C12.5399 18.0155 12.894 18.0609 13.1905 17.9164L21 11.2106C21.271 11.0784 21.4429 10.8036 21.4429 10.5024C21.4429 10.2012 21.271 9.92645 21 9.79425L13.1999 3.0836C12.9034 2.93914 12.5493 2.98446 12.3 3.19974C12.0498 3.41503 11.9526 3.75778 12.0517 4.07221L13.7145 9.39006L19.921 10.0019C20.1759 10.0274 20.3704 10.2417 20.3704 10.4976C20.3704 10.7535 20.1759 10.9678 19.921 10.9933L20.0239 10.9981Z"
-                fill="#14AC7B"
-              />
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="#14AC7B" style={{ transition: 'transform 0.2s' }}>
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
             </svg>
           </button>
         </div>
