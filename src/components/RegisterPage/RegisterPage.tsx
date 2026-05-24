@@ -6,12 +6,128 @@ import './RegisterPage.css';
 import api from '../../utils/api';
 import { Warning, Check } from '../Icons';
 
+interface CustomSelectProps {
+  options: { value: string; label: string }[] | string[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+}
+
+function CustomSelect({ options, value, onChange, placeholder }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const normalizedOptions = options.map(opt => 
+    typeof opt === 'string' ? { value: opt, label: opt } : opt
+  );
+
+  const selectedOption = normalizedOptions.find(o => o.value === value);
+
+  return (
+    <div className="custom-select-container" ref={containerRef}>
+      <div 
+        className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <span>{selectedOption ? selectedOption.label : placeholder}</span>
+        <span className="custom-select-arrow">
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      </div>
+      {isOpen && (
+        <div className="custom-select-options">
+          {normalizedOptions.map(opt => (
+            <div 
+              key={opt.value}
+              className={`custom-select-option ${opt.value === value ? 'selected' : ''}`}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RegisterPage() {
   const cardRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [birthdate, setBirthdate] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthDay, setBirthDay] = useState('');
+  const [birthYear, setBirthYear] = useState('');
+
+  const MONTHS = [
+    { value: '1', label: 'January' },
+    { value: '2', label: 'February' },
+    { value: '3', label: 'March' },
+    { value: '4', label: 'April' },
+    { value: '5', label: 'May' },
+    { value: '6', label: 'June' },
+    { value: '7', label: 'July' },
+    { value: '8', label: 'August' },
+    { value: '9', label: 'September' },
+    { value: '10', label: 'October' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'December' }
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const YEARS = Array.from({ length: 120 }, (_, i) => String(currentYear - i));
+
+  // Compute days list dynamically based on chosen month and year
+  const getDaysList = () => {
+    let daysCount = 31;
+    if (birthMonth) {
+      const monthNum = parseInt(birthMonth);
+      const yearNum = birthYear ? parseInt(birthYear) : 2000; // safe placeholder
+      daysCount = new Date(yearNum, monthNum, 0).getDate();
+    }
+    return Array.from({ length: daysCount }, (_, i) => String(i + 1));
+  };
+
+  // Keep single birthdate string state synced with month/day/year selects
+  useEffect(() => {
+    if (birthYear && birthMonth && birthDay) {
+      const formattedMonth = birthMonth.padStart(2, '0');
+      const formattedDay = birthDay.padStart(2, '0');
+      setBirthdate(`${birthYear}-${formattedMonth}-${formattedDay}`);
+    } else {
+      setBirthdate('');
+    }
+  }, [birthYear, birthMonth, birthDay]);
+
+  // Adjust days if transitioning to a month with fewer days (e.g. 31 to 30 or Feb leap year)
+  useEffect(() => {
+    if (birthMonth) {
+      const monthNum = parseInt(birthMonth);
+      const yearNum = birthYear ? parseInt(birthYear) : 2000;
+      const maxDays = new Date(yearNum, monthNum, 0).getDate();
+      if (birthDay && parseInt(birthDay) > maxDays) {
+        setBirthDay(String(maxDays));
+      }
+    }
+  }, [birthMonth, birthYear, birthDay]);
+
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState(1); // 1 = Register Form, 2 = OTP Verification
   const [loading, setLoading] = useState(false);
@@ -184,16 +300,27 @@ export default function RegisterPage() {
                   </div>
 
                   <div className="field-group">
-                    <label className="field-label" htmlFor="birthdate">DATE OF BIRTH</label>
-                    <input
-                      id="birthdate"
-                      type="date"
-                      className="field-input"
-                      value={birthdate}
-                      onChange={(e) => setBirthdate(e.target.value)}
-                      required
-                      style={{ colorScheme: 'dark' }} // Native support for dark date picker UI
-                    />
+                    <label className="field-label">DATE OF BIRTH</label>
+                    <div className="dob-selects">
+                      <CustomSelect
+                        options={MONTHS}
+                        value={birthMonth}
+                        onChange={setBirthMonth}
+                        placeholder="Month"
+                      />
+                      <CustomSelect
+                        options={getDaysList()}
+                        value={birthDay}
+                        onChange={setBirthDay}
+                        placeholder="Day"
+                      />
+                      <CustomSelect
+                        options={YEARS}
+                        value={birthYear}
+                        onChange={setBirthYear}
+                        placeholder="Year"
+                      />
+                    </div>
                   </div>
                 </div>
 
