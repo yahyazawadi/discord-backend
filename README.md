@@ -1,6 +1,6 @@
-# 🎮 Discord Clone: Master Features Overview
+# 🎮 Squad: Master Features Overview
 
-Welcome to the Discord Clone system. This is a lightweight, high-performance, single-port Express + Socket.io + PeerJS server designed for instant, real-time voice, video, screen share, and interactive messaging.
+Welcome to the squad system. This is a lightweight, high-performance, single-port Express + Socket.io + PeerJS server designed for instant, real-time voice, video, screen share, and interactive messaging.
 
 ---
 
